@@ -165,6 +165,7 @@
         #canvas-container {
             flex-grow: 1;
             position: relative;
+            min-height: 0;
         }
         canvas {
             display: block;
@@ -463,8 +464,11 @@
         // --- Logika Interakcji ---
         function resetView() {
             const { chartWidth, chartHeight } = getChartDimensions();
-            view.offsetX = 0;
-            view.scaleX = chartWidth / (allVoltages.length * increment);
+            
+            const timeDuration = allVoltages.length * increment;
+            view.scaleX = chartWidth / (timeDuration || 1);
+            view.offsetX = -startTime * view.scaleX;
+
             const yRange = dataMaxY - dataMinY;
             view.scaleY = - (chartHeight / (yRange || 1));
             view.offsetY = chartHeight / 2 - ((dataMaxY + dataMinY) / 2) * view.scaleY;
@@ -603,7 +607,13 @@
         // --- Główna funkcja rysująca ---
         function draw() {
             const { width, height } = canvas.getBoundingClientRect();
-            ctx.clearRect(0, 0, width, height);
+            
+            // Use a robust method to clear the entire canvas, ignoring transforms
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
             if (allVoltages.length === 0) {
                 ctx.fillStyle = "#666"; ctx.textAlign = "center"; ctx.font = "16px Arial";
                 ctx.fillText("Brak danych do wyświetlenia. Wybierz plik.", width / 2, height / 2);
@@ -637,35 +647,47 @@
         function drawAxesAndLabels(width, height) {
             const { chartWidth, chartHeight } = getChartDimensions();
             
+            // Draw Grids and Labels
             ctx.save();
-            ctx.font = "10px Arial"; ctx.fillStyle = "#888";
+            ctx.font = "10px Arial";
+            ctx.fillStyle = "#888";
+            ctx.translate(padding.left, padding.top);
 
+            if (fftMode.enabled) {
+                drawFreqAxis(chartWidth, chartHeight);
+                drawDbAxis(chartWidth, chartHeight);
+            } else {
+                drawTimeAxis(chartWidth, chartHeight);
+                drawVoltageAxis(chartWidth, chartHeight);
+            }
+            ctx.restore();
+
+            // Draw Axis Titles
+            ctx.save();
+            ctx.font = "10px Arial";
+            ctx.fillStyle = "#888";
             ctx.textAlign = "center";
+
             if (fftMode.enabled) {
                 const freqRange = chartWidth / fftView.scaleX;
                 const freqFit = getBestFreqFit(freqRange);
-                ctx.fillText(`Częstotliwość [${freqFit.unit}]`, padding.left + chartWidth/2, height - 5);
+                ctx.fillText(`Częstotliwość [${freqFit.unit}]`, padding.left + chartWidth / 2, height - 5);
             } else {
                 const timeRange = chartWidth / view.scaleX;
                 const timeFit = getBestTimeFit(timeRange);
-                ctx.fillText(`Czas [${timeFit.unit}]`, padding.left + chartWidth/2, height - 5);
+                ctx.fillText(`Czas [${timeFit.unit}]`, padding.left + chartWidth / 2, height - 5);
             }
+            
             ctx.save();
-            ctx.translate(padding.left - 45, padding.top + chartHeight/2);
-            ctx.rotate(-Math.PI/2);
+            ctx.translate(padding.left - 45, padding.top + chartHeight / 2);
+            ctx.rotate(-Math.PI / 2);
             ctx.fillText(fftMode.enabled ? "Amplituda [dB]" : "Napięcie [V]", 0, 0);
             ctx.restore();
 
-            ctx.translate(padding.left, padding.top);
-            if (fftMode.enabled) {
-                drawFFTGrid(chartWidth, chartHeight);
-            } else {
-                drawGrid(chartWidth, chartHeight);
-            }
             ctx.restore();
         }
 
-        function drawGrid(width, height) {
+        function drawTimeAxis(width, height) {
             ctx.textAlign = "center";
             const timeRange = width / view.scaleX;
             const timeFit = getBestTimeFit(timeRange);
@@ -673,7 +695,7 @@
             if (timeStep < 1e-15) timeStep = 1e-15;
             const firstTime = -view.offsetX / view.scaleX;
             let time = Math.ceil(firstTime / timeStep) * timeStep;
-            for(let i=0; i<width*2; i++) {
+            while(true) {
                 const x = time * view.scaleX + view.offsetX;
                 if (x > width + 10) break;
                 if (x >= -10) {
@@ -687,7 +709,11 @@
                     }
                 }
                 time += timeStep;
+                if (timeStep === 0 || !isFinite(timeStep)) break;
             }
+        }
+
+        function drawVoltageAxis(width, height) {
             ctx.textAlign = "right";
             const voltRange = height / Math.abs(view.scaleY);
             let voltStep = Math.pow(10, Math.floor(Math.log10(voltRange))) / 5;
@@ -705,6 +731,7 @@
                     if(!isZeroAxis) ctx.fillText(volt.toFixed(2), -8, y + 3);
                 }
                 volt -= voltStep;
+                if (voltStep === 0 || !isFinite(voltStep)) break;
             }
         }
 
@@ -976,12 +1003,12 @@
             if (minDb === Infinity) { minDb = -100; maxDb = 0; }
             
             const dbRange = maxDb - minDb;
-            fftView.scaleY = chartHeight / (dbRange || 1);
-            fftView.offsetY = -minDb * fftView.scaleY;
+            fftView.scaleY = -chartHeight / (dbRange || 1);
+            if (!isFinite(fftView.scaleY)) fftView.scaleY = -1;
+            fftView.offsetY = -maxDb * fftView.scaleY;
         }
 
-        function drawFFTGrid(width, height) {
-            const nyquist = (1 / fftMode.effectiveIncrement) / 2;
+        function drawFreqAxis(width, height) {
             ctx.textAlign = "center";
             const freqRange = width / fftView.scaleX;
             const freqFit = getBestFreqFit(freqRange);
@@ -989,7 +1016,7 @@
             if (freqStep <= 0) freqStep = 1;
             const firstFreq = -fftView.offsetX / fftView.scaleX;
             let freq = Math.ceil(firstFreq / freqStep) * freqStep;
-            for (let i = 0; i < width * 2; i++) {
+            while (true) {
                 const x = freq * fftView.scaleX + fftView.offsetX;
                 if (x > width + 10) break;
                 if (x >= -10) {
@@ -999,23 +1026,29 @@
                     ctx.fillText(labelValue, x, height + 15);
                 }
                 freq += freqStep;
+                if (freqStep === 0 || !isFinite(freqStep)) break;
             }
+        }
 
+        function drawDbAxis(width, height) {
             ctx.textAlign = "right";
             const dbRange = height / Math.abs(fftView.scaleY);
             let dbStep = Math.pow(10, Math.floor(Math.log10(dbRange))) / 2;
             if (dbStep < 1) dbStep = 1;
-            const firstDb = (height - fftView.offsetY) / fftView.scaleY;
-            let db = Math.floor(firstDb / dbStep) * dbStep;
+            if (!isFinite(dbStep)) dbStep = 10;
+
+            const dbTop = (0 - fftView.offsetY) / fftView.scaleY;
+            let db = Math.ceil(dbTop / dbStep) * dbStep;
             for (let i = 0; i < height * 2; i++) {
                 const y = db * fftView.scaleY + fftView.offsetY;
-                if (y < -10) break;
-                if (y <= height + 10) {
+                if (y > height + 10) break;
+                if (y >= -10) {
                     ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5;
                     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
                     ctx.fillText(db.toFixed(0), -8, y + 3);
                 }
-                db += dbStep;
+                db -= dbStep;
+                if (dbStep === 0 || !isFinite(dbStep)) break;
             }
         }
 
