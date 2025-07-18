@@ -122,22 +122,36 @@
         .radio-group input[type="radio"] { display: none; }
         .radio-group input[type="radio"]:checked + svg + span { color: #fff; }
         .radio-group label:has(input:checked) { background-color: #007bff; }
-        #status, #info-bar, .hint-text {
+        #status {
             font-size: 0.9em;
             color: #bbb;
             min-height: 1.1em;
             width: 100%;
         }
-        .hint-text {
+        #separator-info {
+            font-size: 0.8em;
             color: #888;
-            margin-top: 5px;
+            min-height: 1em;
+            margin-top: -5px;
         }
-        .slider-control {
+        .slider-control, .fft-control {
             display: flex;
             align-items: center;
             gap: 10px;
             color: #ccc;
             font-size: 0.9em;
+        }
+        .fft-control input, .fft-control select {
+            background-color: #222;
+            color: #eee;
+            border: 1px solid #555;
+            border-radius: 3px;
+            padding: 4px;
+            font-family: inherit;
+            font-size: 0.9em;
+        }
+        .fft-control input {
+            width: 60px;
         }
         #density-info {
             font-family: monospace;
@@ -179,6 +193,27 @@
             top: 10px;
             left: 10px;
         }
+        #hint-panel {
+            bottom: 10px;
+            left: 10px;
+            pointer-events: all;
+            display: block;
+        }
+        #hint-panel-close {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            width: 20px;
+            height: 20px;
+            background-color: #555;
+            color: #fff;
+            border: 1px solid #888;
+            border-radius: 50%;
+            cursor: pointer;
+            text-align: center;
+            line-height: 18px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -193,6 +228,7 @@
                     <span>Wybierz plik</span>
                 </label>
                 <input type="file" id="file-input" accept=".csv,.txt">
+                <div id="separator-info"></div>
                 <button id="reset-view-btn" class="btn">
                     <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.2-3.2l-4.2 4.2A4 4 0 1 0 11 18.9V22h-1a10 10 0 0 1-8-10.5z"></path></svg>
                     <span>Resetuj Widok</span>
@@ -237,24 +273,38 @@
                     <svg viewBox="0 0 24 24"><path d="M3 3v18h18"></path><path d="M7 12h2l2-4 2 8 2-4h2"></path></svg>
                     <span>Analiza FFT</span>
                 </button>
+                 <div class="fft-control" id="fft-controls" style="display: none;">
+                     <label for="fft-freq-input">Zakres:</label>
+                     <input type="number" id="fft-freq-input" value="100">
+                     <select id="fft-unit-select">
+                         <option value="1">Hz</option>
+                         <option value="1000" selected>kHz</option>
+                         <option value="1000000">MHz</option>
+                     </select>
+                </div>
             </div>
         </div>
         <div id="status">Wybierz plik, aby rozpocząć.</div>
-        <div id="info-bar"></div>
-        <div class="hint-text">Wskazówka: Użyj kółka myszy do zoomu osi X, a Ctrl + kółko myszy do zoomu osi Y.</div>
     </div>
 
     <div id="canvas-container">
         <canvas id="plot-canvas"></canvas>
         <div id="measurements-panel" class="panel"></div>
         <div id="auto-measurements-panel" class="panel"></div>
+        <div id="hint-panel" class="panel">
+            <div id="hint-panel-close">&times;</div>
+            <b>Wskazówki:</b><br>
+            - Zoom X: Kółko myszy<br>
+            - Zoom Y: Ctrl + Kółko<br>
+            - Przesuń: Przeciągnij
+        </div>
     </div>
 
     <script>
         // --- Elementy DOM ---
         const fileInput = document.getElementById('file-input');
         const statusDiv = document.getElementById('status');
-        const infoBar = document.getElementById('info-bar');
+        const separatorInfo = document.getElementById('separator-info');
         const canvasContainer = document.getElementById('canvas-container');
         const canvas = document.getElementById('plot-canvas');
         const ctx = canvas.getContext('2d');
@@ -267,6 +317,11 @@
         const autoMeasurementsPanel = document.getElementById('auto-measurements-panel');
         const densityInfo = document.getElementById('density-info');
         const sliderControl = document.querySelector('.slider-control');
+        const fftControls = document.getElementById('fft-controls');
+        const fftFreqInput = document.getElementById('fft-freq-input');
+        const fftUnitSelect = document.getElementById('fft-unit-select');
+        const hintPanel = document.getElementById('hint-panel');
+        const hintPanelClose = document.getElementById('hint-panel-close');
 
         // --- Globalne zmienne ---
         let allVoltages = [];
@@ -284,7 +339,7 @@
         // --- Stan narzędzi ---
         const cursors = { enabled: false, v1: 0.75, v2: 0.25, t1: 0.25, t2: 0.75, dragging: null, hovering: null, grabDistance: 10 };
         const autoMeasurements = { enabled: false };
-        const fftMode = { enabled: false, data: null };
+        const fftMode = { enabled: false, data: null, effectiveIncrement: 1 };
 
         // --- Inicjalizacja ---
         function init() {
@@ -312,6 +367,18 @@
                 optimizationLevel = parseInt(e.target.value, 10);
                 draw();
             });
+            
+            const fftUpdateHandler = () => {
+                if(fftMode.enabled) {
+                    calculateFFT();
+                    resetFFTView();
+                    draw();
+                }
+            };
+            fftFreqInput.addEventListener('change', fftUpdateHandler);
+            fftUnitSelect.addEventListener('change', fftUpdateHandler);
+            
+            hintPanelClose.addEventListener('click', () => hintPanel.style.display = 'none');
 
             canvas.addEventListener('wheel', handleZoom);
             canvas.addEventListener('mousedown', handleMouseDown);
@@ -337,7 +404,7 @@
             const file = event.target.files[0];
             if (!file) return;
             statusDiv.textContent = '⏳ Wczytywanie pliku...';
-            infoBar.textContent = '';
+            separatorInfo.textContent = '';
             const reader = new FileReader();
             reader.onload = e => {
                 statusDiv.textContent = '⚙️ Przetwarzanie danych... To może potrwać...';
@@ -349,7 +416,7 @@
                         statusDiv.textContent = `✅ Gotowe! Użyj kółka myszy do zoomu, przeciągnij by przesuwać.`;
                     } catch (error) {
                         statusDiv.textContent = `❌ Błąd: ${error.message}`;
-                        infoBar.textContent = 'Sprawdź format pliku lub konsolę (F12) po więcej szczegółów.';
+                        separatorInfo.textContent = 'Sprawdź format pliku lub konsolę (F12).';
                         console.error(error);
                     }
                 }, 50);
@@ -369,7 +436,7 @@
                 columnSeparator = ',';
                 decimalSeparator = '.';
             } else { throw new Error("Nie udało się automatycznie wykryć separatora kolumn."); }
-            infoBar.textContent = `Wykryte separatory: Kolumna = "${columnSeparator}", Dziesiętny = "${decimalSeparator}"`;
+            separatorInfo.textContent = `Separatory: Kolumna="${columnSeparator}" Dziesiętny="${decimalSeparator}"`;
             const parseNumber = (str) => parseFloat(str?.trim().replace(decimalSeparator, '.'));
             const metaLineParts = lines[1].trim().split(columnSeparator);
             startTime = parseNumber(metaLineParts[1]);
@@ -407,7 +474,6 @@
             e.preventDefault();
             if (cursors.dragging) return;
             const z = 1 + (e.deltaY < 0 ? 1 : -1) * 0.1;
-
             if (fftMode.enabled) {
                 if (e.ctrlKey) {
                     const mouseY = e.offsetY - padding.top;
@@ -546,8 +612,6 @@
             }
             const { chartWidth, chartHeight } = getChartDimensions();
             
-            drawAxes(width, height);
-
             ctx.save();
             ctx.translate(padding.left, padding.top);
             ctx.beginPath(); 
@@ -564,11 +628,13 @@
             
             ctx.restore();
 
+            drawAxesAndLabels(width, height);
+
             if (cursors.enabled && !fftMode.enabled) updateMeasurementsPanel();
             if (autoMeasurements.enabled && !fftMode.enabled) updateAutoMeasurementsPanel();
         }
 
-        function drawAxes(width, height) {
+        function drawAxesAndLabels(width, height) {
             const { chartWidth, chartHeight } = getChartDimensions();
             
             ctx.save();
@@ -807,6 +873,7 @@
         function toggleFFT() {
             fftMode.enabled = !fftMode.enabled;
             fftBtn.classList.toggle('active', fftMode.enabled);
+            fftControls.style.display = fftMode.enabled ? 'flex' : 'none';
             if (fftMode.enabled) {
                 if (cursors.enabled) toggleCursors();
                 if (autoMeasurements.enabled) toggleAutoMeasurements();
@@ -823,12 +890,30 @@
 
         function calculateFFT() {
             const { startIndex, endIndex } = getVisibleDataIndices();
-            let samples = allVoltages.slice(startIndex, endIndex);
+            const originalSamples = allVoltages.slice(startIndex, endIndex);
+            if (originalSamples.length < 2) {
+                fftMode.data = null;
+                return;
+            }
+            
+            const maxFreq = parseFloat(fftFreqInput.value) * parseInt(fftUnitSelect.value, 10);
+            const requiredSamplingFreq = maxFreq * 2;
+            const requiredIncrement = 1 / requiredSamplingFreq;
+            
+            const step = Math.max(1, Math.floor(requiredIncrement / increment));
+            
+            const samples = [];
+            for (let i = 0; i < originalSamples.length; i += step) {
+                samples.push(originalSamples[i]);
+            }
+
             if (samples.length < 2) {
                 fftMode.data = null;
                 return;
             }
             
+            fftMode.effectiveIncrement = increment * step;
+
             for(let i=0; i < samples.length; i++) {
                 samples[i] *= 0.5 * (1 - Math.cos(2 * Math.PI * i / (samples.length - 1)));
             }
@@ -877,7 +962,7 @@
             if (!fftMode.data) calculateFFT();
             if (!fftMode.data) return;
 
-            const nyquist = (1 / increment) / 2;
+            const nyquist = (1 / fftMode.effectiveIncrement) / 2;
             fftView.scaleX = chartWidth / nyquist;
             fftView.offsetX = 0;
 
@@ -896,7 +981,7 @@
         }
 
         function drawFFTGrid(width, height) {
-            const nyquist = (1 / increment) / 2;
+            const nyquist = (1 / fftMode.effectiveIncrement) / 2;
             ctx.textAlign = "center";
             const freqRange = width / fftView.scaleX;
             const freqFit = getBestFreqFit(freqRange);
@@ -937,7 +1022,7 @@
         function drawFFT(width, height) {
             if (!fftMode.data) return;
             const magnitudes = fftMode.data;
-            const nyquist = (1 / increment) / 2;
+            const nyquist = (1 / fftMode.effectiveIncrement) / 2;
             const freqStep = nyquist / magnitudes.length;
             
             ctx.strokeStyle = '#33ff99'; ctx.lineWidth = 1;
