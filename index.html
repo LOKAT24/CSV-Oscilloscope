@@ -202,7 +202,12 @@
                 <span class="section-title">Tryb Wyświetlania</span>
                 <div class="radio-group" id="render-mode-controls">
                     <label>
-                        <input type="radio" name="renderMode" value="points" checked>
+                        <input type="radio" name="renderMode" value="minmax" checked>
+                        <svg viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>
+                        <span>Szybki</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="renderMode" value="points">
                         <svg viewBox="0 0 24 24" style="fill:currentColor; stroke:none;"><circle cx="12" cy="12" r="1.5"></circle><circle cx="19" cy="5" r="1.5"></circle><circle cx="5" cy="19" r="1.5"></circle><circle cx="5" cy="5" r="1.5"></circle><circle cx="19" cy="19" r="1.5"></circle></svg>
                         <span>Punkty</span>
                     </label>
@@ -256,13 +261,14 @@
         const measurementsPanel = document.getElementById('measurements-panel');
         const autoMeasurementsPanel = document.getElementById('auto-measurements-panel');
         const densityInfo = document.getElementById('density-info');
+        const sliderControl = document.querySelector('.slider-control');
 
         // --- Globalne zmienne ---
         let allVoltages = [];
         let startTime = 0;
         let increment = 1e-9;
         let dataMinY = 0, dataMaxY = 0;
-        let renderMode = 'points';
+        let renderMode = 'minmax';
         let optimizationLevel = 25;
         const padding = { top: 20, right: 20, bottom: 40, left: 60 };
 
@@ -285,7 +291,11 @@
             fileInput.addEventListener('change', handleFileSelect);
             
             document.querySelectorAll('input[name="renderMode"]').forEach(radio => {
-                radio.addEventListener('change', function() { renderMode = this.value; draw(); });
+                radio.addEventListener('change', function() { 
+                    renderMode = this.value; 
+                    sliderControl.style.display = renderMode === 'minmax' ? 'none' : 'flex';
+                    draw(); 
+                });
             });
             
             cursorsBtn.addEventListener('click', toggleCursors);
@@ -302,6 +312,9 @@
             canvas.addEventListener('mouseup', handleMouseUp);
             canvas.addEventListener('mouseleave', handleMouseUp);
             window.addEventListener('resize', setupCanvas);
+            
+            // Ustawienie początkowej widoczności suwaka
+            sliderControl.style.display = renderMode === 'minmax' ? 'none' : 'flex';
         }
 
         function setupCanvas() {
@@ -571,7 +584,36 @@
             const { startIndex, endIndex } = getVisibleDataIndices();
             const pointsInView = endIndex - startIndex;
             
-            // Logika optymalizacji
+            if (renderMode === 'minmax') {
+                densityInfo.textContent = 'Auto';
+                ctx.strokeStyle = waveColor;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                for (let px = 0; px < width; px++) {
+                    const timeStartPx = (px - view.offsetX) / view.scaleX;
+                    const timeEndPx = (px + 1 - view.offsetX) / view.scaleX;
+                    const startIdx = Math.max(0, Math.floor((timeStartPx - startTime) / increment));
+                    const endIdx = Math.min(allVoltages.length, Math.ceil((timeEndPx - startTime) / increment));
+                    if (startIdx >= endIdx) continue;
+                    
+                    let localMin = allVoltages[startIdx], localMax = allVoltages[startIdx];
+                    for (let i = startIdx + 1; i < endIdx; i++) {
+                        const v = allVoltages[i];
+                        if (v < localMin) localMin = v;
+                        if (v > localMax) localMax = v;
+                    }
+                    
+                    const y1 = localMin * view.scaleY + view.offsetY;
+                    const y2 = localMax * view.scaleY + view.offsetY;
+                    
+                    ctx.moveTo(px, y1);
+                    ctx.lineTo(px, y2);
+                }
+                ctx.stroke();
+                return;
+            }
+            
+            // Logika optymalizacji dla trybów Punkty i Linia
             const baseDensity = width * 2;
             const maxDensity = pointsInView;
             const density = baseDensity + (maxDensity - baseDensity) * ((optimizationLevel - 1) / 99);
@@ -733,4 +775,3 @@
     </script>
 </body>
 </html>
-
