@@ -592,8 +592,15 @@
                 tooltipPanel.style.display = 'none';
             }
 
-            // Panning and cursor logic
-            if (view.panning) {
+            // Dragging, Panning and Hovering logic
+            if (cursors.dragging) {
+                if (cursors.dragging === 't1' || cursors.dragging === 't2') {
+                    cursors[cursors.dragging] = Math.max(0, Math.min(1, mouseX_chart / chartWidth));
+                } else { // v1 or v2
+                    cursors[cursors.dragging] = Math.max(0, Math.min(1, mouseY_chart / chartHeight));
+                }
+                draw();
+            } else if (view.panning) {
                 const dx = e.offsetX - view.lastMouseX;
                 const dy = e.offsetY - view.lastMouseY;
                 if (fftMode.enabled) {
