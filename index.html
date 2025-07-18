@@ -194,6 +194,17 @@
             top: 10px;
             left: 10px;
         }
+        #fft-peaks-panel {
+            top: 150px;
+            right: 10px;
+            display: none;
+        }
+        #tooltip-panel {
+            position: fixed; /* Używamy fixed, aby pozycjonować względem okna przeglądarki */
+            display: none;
+            pointer-events: none; /* Kluczowe, aby panel nie przechwytywał zdarzeń myszy */
+            z-index: 10;
+        }
         #hint-panel {
             bottom: 10px;
             left: 10px;
@@ -275,13 +286,23 @@
                     <span>Analiza FFT</span>
                 </button>
                  <div class="fft-control" id="fft-controls" style="display: none;">
-                     <label for="fft-freq-input">Zakres:</label>
-                     <input type="number" id="fft-freq-input" value="100">
-                     <select id="fft-unit-select">
-                         <option value="1">Hz</option>
-                         <option value="1000" selected>kHz</option>
-                         <option value="1000000">MHz</option>
-                     </select>
+                     <div>
+                         <label for="fft-freq-input">Zakres:</label>
+                         <input type="number" id="fft-freq-input" value="100">
+                         <select id="fft-unit-select">
+                             <option value="1">Hz</option>
+                             <option value="1000" selected>kHz</option>
+                             <option value="1000000">MHz</option>
+                         </select>
+                     </div>
+                     <button id="fft-peaks-toggle-btn" class="btn">
+                        <svg viewBox="0 0 24 24"><path d="M3 20h18L12 4z"></path></svg>
+                        <span>Wykryj Piki</span>
+                    </button>
+                     <div id="fft-peaks-controls" style="display: none;">
+                        <label for="fft-peaks-input">Liczba pików:</label>
+                        <input type="number" id="fft-peaks-input" value="5" min="1" max="20" style="width: 50px;">
+                     </div>
                 </div>
             </div>
         </div>
@@ -292,6 +313,8 @@
         <canvas id="plot-canvas"></canvas>
         <div id="measurements-panel" class="panel"></div>
         <div id="auto-measurements-panel" class="panel"></div>
+        <div id="fft-peaks-panel" class="panel"></div>
+        <div id="tooltip-panel" class="panel"></div>
         <div id="hint-panel" class="panel">
             <div id="hint-panel-close">&times;</div>
             <b>Wskazówki:</b><br>
@@ -321,6 +344,11 @@
         const fftControls = document.getElementById('fft-controls');
         const fftFreqInput = document.getElementById('fft-freq-input');
         const fftUnitSelect = document.getElementById('fft-unit-select');
+        const fftPeaksToggleBtn = document.getElementById('fft-peaks-toggle-btn');
+        const fftPeaksControls = document.getElementById('fft-peaks-controls');
+        const fftPeaksInput = document.getElementById('fft-peaks-input');
+        const fftPeaksPanel = document.getElementById('fft-peaks-panel');
+        const tooltipPanel = document.getElementById('tooltip-panel');
         const hintPanel = document.getElementById('hint-panel');
         const hintPanelClose = document.getElementById('hint-panel-close');
 
@@ -341,6 +369,7 @@
         const cursors = { enabled: false, v1: 0.75, v2: 0.25, t1: 0.25, t2: 0.75, dragging: null, hovering: null, grabDistance: 10 };
         const autoMeasurements = { enabled: false };
         const fftMode = { enabled: false, data: null, effectiveIncrement: 1 };
+        const fftPeaks = { enabled: false, data: [], num: 5 };
 
         // --- Inicjalizacja ---
         function init() {
@@ -358,6 +387,15 @@
             cursorsBtn.addEventListener('click', toggleCursors);
             autoMeasureBtn.addEventListener('click', toggleAutoMeasurements);
             fftBtn.addEventListener('click', toggleFFT);
+            fftPeaksToggleBtn.addEventListener('click', toggleFFTPeaks);
+            fftPeaksInput.addEventListener('change', (e) => {
+                fftPeaks.num = parseInt(e.target.value, 10);
+                if (fftPeaks.enabled) {
+                    findFFTPeaks();
+                    draw();
+                }
+            });
+
             resetViewBtn.addEventListener('click', () => { 
                 if(allVoltages.length === 0) return;
                 if (fftMode.enabled) { resetFFTView(); } 
@@ -385,7 +423,10 @@
             canvas.addEventListener('mousedown', handleMouseDown);
             canvas.addEventListener('mousemove', handleMouseMove);
             canvas.addEventListener('mouseup', handleMouseUp);
-            canvas.addEventListener('mouseleave', handleMouseUp);
+            canvas.addEventListener('mouseleave', (e) => {
+                handleMouseUp(e);
+                tooltipPanel.style.display = 'none';
+            });
             window.addEventListener('resize', setupCanvas);
             
             sliderControl.style.display = renderMode === 'minmax' ? 'none' : 'flex';
@@ -526,6 +567,32 @@
         }
 
         function handleMouseMove(e) {
+            // Tooltip logic
+            const rect = canvas.getBoundingClientRect();
+            const mouseX_abs = e.offsetX;
+            const mouseY_abs = e.offsetY;
+            const mouseX_chart = mouseX_abs - padding.left;
+            const mouseY_chart = mouseY_abs - padding.top;
+            const { chartWidth, chartHeight } = getChartDimensions();
+
+            if (mouseX_chart >= 0 && mouseX_chart <= chartWidth && mouseY_chart >= 0 && mouseY_chart <= chartHeight) {
+                tooltipPanel.style.display = 'block';
+                tooltipPanel.style.left = `${e.clientX + 15}px`;
+                tooltipPanel.style.top = `${e.clientY + 15}px`;
+                if (fftMode.enabled) {
+                    const freq = (mouseX_chart - fftView.offsetX) / fftView.scaleX;
+                    const db = (mouseY_chart - fftView.offsetY) / fftView.scaleY;
+                    tooltipPanel.innerHTML = `${formatValue(freq, 'Hz')}<br>${db.toFixed(2)} dB`;
+                } else {
+                    const time = (mouseX_chart - view.offsetX) / view.scaleX;
+                    const voltage = (mouseY_chart - view.offsetY) / view.scaleY;
+                    tooltipPanel.innerHTML = `${formatValue(time, 's')}<br>${formatValue(voltage, 'V')}`;
+                }
+            } else {
+                tooltipPanel.style.display = 'none';
+            }
+
+            // Panning and cursor logic
             if (view.panning) {
                 const dx = e.offsetX - view.lastMouseX;
                 const dy = e.offsetY - view.lastMouseY;
@@ -540,15 +607,12 @@
                 view.lastMouseY = e.offsetY;
                 draw();
             } else if (cursors.enabled && !fftMode.enabled) {
-                const { chartWidth, chartHeight } = getChartDimensions();
-                const mouseX = e.offsetX - padding.left;
-                const mouseY = e.offsetY - padding.top;
                 const dpr = window.devicePixelRatio || 1;
                 const grabDist = cursors.grabDistance / dpr;
                 let hovering = null;
-                if (Math.abs(mouseX - cursors.t1 * chartWidth) < grabDist || Math.abs(mouseX - cursors.t2 * chartWidth) < grabDist) {
+                if (Math.abs(mouseX_chart - cursors.t1 * chartWidth) < grabDist || Math.abs(mouseX_chart - cursors.t2 * chartWidth) < grabDist) {
                     hovering = 'col-resize';
-                } else if (Math.abs(mouseY - cursors.v1 * chartHeight) < grabDist || Math.abs(mouseY - cursors.v2 * chartHeight) < grabDist) {
+                } else if (Math.abs(mouseY_chart - cursors.v1 * chartHeight) < grabDist || Math.abs(mouseY_chart - cursors.v2 * chartHeight) < grabDist) {
                     hovering = 'row-resize';
                 }
                 canvas.style.cursor = hovering || 'default';
@@ -642,6 +706,7 @@
 
             if (cursors.enabled && !fftMode.enabled) updateMeasurementsPanel();
             if (autoMeasurements.enabled && !fftMode.enabled) updateAutoMeasurementsPanel();
+            if (fftPeaks.enabled) updateFFTPeaksPanel();
         }
 
         function drawAxesAndLabels(width, height) {
@@ -911,8 +976,54 @@
             } else {
                 cursorsBtn.disabled = false;
                 autoMeasureBtn.disabled = false;
+                // Ukryj narzędzia FFT gdy tryb jest wyłączony
+                if (fftPeaks.enabled) toggleFFTPeaks();
+                fftPeaksPanel.style.display = 'none';
             }
             draw();
+        }
+
+        function toggleFFTPeaks() {
+            fftPeaks.enabled = !fftPeaks.enabled;
+            fftPeaksToggleBtn.classList.toggle('active', fftPeaks.enabled);
+            fftPeaksControls.style.display = fftPeaks.enabled ? 'flex' : 'none';
+            fftPeaksPanel.style.display = fftPeaks.enabled ? 'block' : 'none';
+            if (fftPeaks.enabled) {
+                findFFTPeaks();
+            }
+            draw();
+        }
+
+        function findFFTPeaks() {
+            if (!fftMode.data) {
+                fftPeaks.data = [];
+                return;
+            }
+            const magnitudes = fftMode.data;
+            const allPeaks = [];
+            for (let i = 1; i < magnitudes.length - 1; i++) {
+                if (magnitudes[i] > magnitudes[i - 1] && magnitudes[i] > magnitudes[i + 1]) {
+                    allPeaks.push({ index: i, magnitude: magnitudes[i] });
+                }
+            }
+            allPeaks.sort((a, b) => b.magnitude - a.magnitude);
+            fftPeaks.data = allPeaks.slice(0, fftPeaks.num);
+        }
+
+        function updateFFTPeaksPanel() {
+            if (!fftPeaks.enabled || fftPeaks.data.length === 0) {
+                fftPeaksPanel.style.display = 'none';
+                return;
+            }
+            fftPeaksPanel.style.display = 'block';
+            const nyquist = (1 / fftMode.effectiveIncrement) / 2;
+            const freqStep = nyquist / fftMode.data.length;
+            let html = '<b>Wykryte piki:</b><br>';
+            fftPeaks.data.forEach(peak => {
+                const freq = peak.index * freqStep;
+                html += `${formatValue(freq, 'Hz')}: ${peak.magnitude.toFixed(2)} dB<br>`;
+            });
+            fftPeaksPanel.innerHTML = html;
         }
 
         function calculateFFT() {
@@ -982,6 +1093,9 @@
                 magnitudes[i] = 20 * Math.log10(mag);
             }
             fftMode.data = magnitudes;
+            if (fftPeaks.enabled) {
+                findFFTPeaks();
+            }
         }
         
         function resetFFTView() {
@@ -1081,6 +1195,26 @@
                 }
             }
             ctx.stroke();
+
+            // Draw peaks if enabled
+            if (fftPeaks.enabled && fftPeaks.data.length > 0) {
+                ctx.fillStyle = '#ff4444';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+
+                fftPeaks.data.forEach(peak => {
+                    const freq = peak.index * freqStep;
+                    const x = freq * fftView.scaleX + fftView.offsetX;
+                    const y = peak.magnitude * fftView.scaleY + fftView.offsetY;
+
+                    if (x > 0 && x < width && y > 0 && y < height) {
+                        ctx.beginPath();
+                        ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.fillText(formatValue(freq, 'Hz'), x, y - 5);
+                    }
+                });
+            }
         }
 
         init();
