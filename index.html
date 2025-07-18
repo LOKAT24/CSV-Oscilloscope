@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wydajny Wykres Canvas z Pomiarami</title>
+    <title>Wydajny Wykres Canvas z Analizą FFT</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -233,6 +233,10 @@
                     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><rect x="7" y="7" width="3" height="5"></rect><rect x="14" y="7" width="3" height="5"></rect><line x1="7" y1="15" x2="17" y2="15"></line><line x1="10" y1="12" x2="14" y2="12"></line></svg>
                     <span>Pomiary Auto</span>
                 </button>
+                <button id="fft-toggle-btn" class="btn">
+                    <svg viewBox="0 0 24 24"><path d="M3 3v18h18"></path><path d="M7 12h2l2-4 2 8 2-4h2"></path></svg>
+                    <span>Analiza FFT</span>
+                </button>
             </div>
         </div>
         <div id="status">Wybierz plik, aby rozpocząć.</div>
@@ -256,6 +260,7 @@
         const ctx = canvas.getContext('2d');
         const cursorsBtn = document.getElementById('cursors-toggle-btn');
         const autoMeasureBtn = document.getElementById('auto-measure-toggle-btn');
+        const fftBtn = document.getElementById('fft-toggle-btn');
         const resetViewBtn = document.getElementById('reset-view-btn');
         const optimizationSlider = document.getElementById('optimization-slider');
         const measurementsPanel = document.getElementById('measurements-panel');
@@ -278,12 +283,10 @@
             panning: false, lastMouseX: 0, lastMouseY: 0
         };
         
-        // --- Stan kursorów i pomiarów ---
-        const cursors = {
-            enabled: false, v1: 0.75, v2: 0.25, t1: 0.25, t2: 0.75,
-            dragging: null, hovering: null, grabDistance: 10
-        };
+        // --- Stan narzędzi ---
+        const cursors = { enabled: false, v1: 0.75, v2: 0.25, t1: 0.25, t2: 0.75, dragging: null, hovering: null, grabDistance: 10 };
         const autoMeasurements = { enabled: false };
+        const fftMode = { enabled: false, data: null };
 
         // --- Inicjalizacja ---
         function init() {
@@ -300,6 +303,7 @@
             
             cursorsBtn.addEventListener('click', toggleCursors);
             autoMeasureBtn.addEventListener('click', toggleAutoMeasurements);
+            fftBtn.addEventListener('click', toggleFFT);
             resetViewBtn.addEventListener('click', () => { if(allVoltages.length > 0) { resetView(); draw(); } });
             optimizationSlider.addEventListener('input', (e) => {
                 optimizationLevel = parseInt(e.target.value, 10);
@@ -313,7 +317,6 @@
             canvas.addEventListener('mouseleave', handleMouseUp);
             window.addEventListener('resize', setupCanvas);
             
-            // Ustawienie początkowej widoczności suwaka
             sliderControl.style.display = renderMode === 'minmax' ? 'none' : 'flex';
         }
 
@@ -330,7 +333,6 @@
         function handleFileSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
-
             statusDiv.textContent = '⏳ Wczytywanie pliku...';
             infoBar.textContent = '';
             const reader = new FileReader();
@@ -401,9 +403,7 @@
         function handleZoom(e) {
             e.preventDefault();
             if (cursors.dragging) return;
-
             const z = 1 + (e.deltaY < 0 ? 1 : -1) * 0.1;
-
             if (e.ctrlKey) {
                 const mouseY = e.offsetY - padding.top;
                 const v = (mouseY - view.offsetY) / view.scaleY;
@@ -415,12 +415,11 @@
                 view.scaleX *= z;
                 view.offsetX = mouseX - t * view.scaleX;
             }
-            
             draw();
         }
 
         function handleMouseDown(e) {
-            if (cursors.enabled) {
+            if (cursors.enabled && !fftMode.enabled) {
                 const { chartWidth, chartHeight } = getChartDimensions();
                 const mouseX = e.offsetX - padding.left;
                 const mouseY = e.offsetY - padding.top;
@@ -455,7 +454,7 @@
                 view.offsetX += dx; view.offsetY += dy;
                 view.lastMouseX = e.offsetX; view.lastMouseY = e.offsetY;
                 draw();
-            } else if (cursors.enabled) {
+            } else if (cursors.enabled && !fftMode.enabled) {
                 const dpr = window.devicePixelRatio || 1;
                 const grabDist = cursors.grabDistance / dpr;
                 let hovering = null;
@@ -473,7 +472,7 @@
             cursors.dragging = null;
         }
 
-        // --- Funkcje pomocnicze do rysowania ---
+        // --- Funkcje pomocnicze ---
         function getChartDimensions() {
             const { width, height } = canvas.getBoundingClientRect();
             return {
@@ -494,6 +493,13 @@
             if (absRange >= 1e-6) return { multiplier: 1e6, unit: 'µs' };
             if (absRange >= 1e-9) return { multiplier: 1e9, unit: 'ns' };
             return { multiplier: 1e12, unit: 'ps' };
+        }
+        function getBestFreqFit(range) {
+            const absRange = Math.abs(range);
+            if (absRange >= 1e9) return { multiplier: 1e-9, unit: 'GHz' };
+            if (absRange >= 1e6) return { multiplier: 1e-6, unit: 'MHz' };
+            if (absRange >= 1e3) return { multiplier: 1e-3, unit: 'kHz' };
+            return { multiplier: 1, unit: 'Hz' };
         }
         function formatValue(value, unit) {
             if (value === null || isNaN(value)) return '---';
@@ -520,21 +526,68 @@
                 densityInfo.textContent = '';
                 return;
             }
+            
             const { chartWidth, chartHeight } = getChartDimensions();
+            
+            // Rysowanie siatki i etykiet osi (zawsze widoczne)
+            drawAxes(width, height);
+
+            // Ustawienie obszaru przycinania i rysowanie zawartości
             ctx.save();
             ctx.translate(padding.left, padding.top);
-            drawGrid(chartWidth, chartHeight);
-            ctx.beginPath(); ctx.rect(0, 0, chartWidth, chartHeight); ctx.clip();
-            drawWaveform(chartWidth, chartHeight);
-            if (cursors.enabled) drawCursors(chartWidth, chartHeight);
+            ctx.beginPath(); 
+            ctx.rect(0, 0, chartWidth, chartHeight); 
+            ctx.clip();
+            
+            if (fftMode.enabled) {
+                if (!fftMode.data) calculateFFT();
+                drawFFT(chartWidth, chartHeight);
+            } else {
+                drawWaveform(chartWidth, chartHeight);
+                if (cursors.enabled) drawCursors(chartWidth, chartHeight);
+            }
+            
             ctx.restore();
-            drawAxesInfo(width, height);
-            if (cursors.enabled) updateMeasurementsPanel();
-            if (autoMeasurements.enabled) updateAutoMeasurementsPanel();
+
+            // Aktualizacja paneli informacyjnych
+            if (cursors.enabled && !fftMode.enabled) updateMeasurementsPanel();
+            if (autoMeasurements.enabled && !fftMode.enabled) updateAutoMeasurementsPanel();
+        }
+
+        function drawAxes(width, height) {
+            const { chartWidth, chartHeight } = getChartDimensions();
+            
+            ctx.save();
+            ctx.font = "10px Arial"; ctx.fillStyle = "#888";
+
+            // Tytuły osi
+            ctx.textAlign = "center";
+            if (fftMode.enabled) {
+                const nyquist = (1 / increment) / 2;
+                const freqFit = getBestFreqFit(nyquist);
+                ctx.fillText(`Częstotliwość [${freqFit.unit}]`, padding.left + chartWidth/2, height - 5);
+            } else {
+                const timeRange = chartWidth / view.scaleX;
+                const timeFit = getBestTimeFit(timeRange);
+                ctx.fillText(`Czas [${timeFit.unit}]`, padding.left + chartWidth/2, height - 5);
+            }
+            ctx.save();
+            ctx.translate(padding.left - 45, padding.top + chartHeight/2);
+            ctx.rotate(-Math.PI/2);
+            ctx.fillText(fftMode.enabled ? "Amplituda [dB]" : "Napięcie [V]", 0, 0);
+            ctx.restore();
+
+            // Linie siatki i etykiety
+            ctx.translate(padding.left, padding.top);
+            if (fftMode.enabled) {
+                drawFFTGrid(chartWidth, chartHeight);
+            } else {
+                drawGrid(chartWidth, chartHeight);
+            }
+            ctx.restore();
         }
 
         function drawGrid(width, height) {
-            ctx.font = "10px Arial"; ctx.fillStyle = "#888";
             // Siatka pionowa (czas)
             ctx.textAlign = "center";
             const timeRange = width / view.scaleX;
@@ -586,40 +639,32 @@
             
             if (renderMode === 'minmax') {
                 densityInfo.textContent = 'Auto';
-                ctx.strokeStyle = waveColor;
-                ctx.lineWidth = 1;
-                ctx.beginPath();
+                ctx.strokeStyle = waveColor; ctx.lineWidth = 1; ctx.beginPath();
                 for (let px = 0; px < width; px++) {
                     const timeStartPx = (px - view.offsetX) / view.scaleX;
                     const timeEndPx = (px + 1 - view.offsetX) / view.scaleX;
                     const startIdx = Math.max(0, Math.floor((timeStartPx - startTime) / increment));
                     const endIdx = Math.min(allVoltages.length, Math.ceil((timeEndPx - startTime) / increment));
                     if (startIdx >= endIdx) continue;
-                    
                     let localMin = allVoltages[startIdx], localMax = allVoltages[startIdx];
                     for (let i = startIdx + 1; i < endIdx; i++) {
                         const v = allVoltages[i];
                         if (v < localMin) localMin = v;
                         if (v > localMax) localMax = v;
                     }
-                    
                     const y1 = localMin * view.scaleY + view.offsetY;
                     const y2 = localMax * view.scaleY + view.offsetY;
-                    
-                    ctx.moveTo(px, y1);
-                    ctx.lineTo(px, y2);
+                    ctx.moveTo(px, y1); ctx.lineTo(px, y2);
                 }
                 ctx.stroke();
                 return;
             }
             
-            // Logika optymalizacji dla trybów Punkty i Linia
             const baseDensity = width * 2;
             const maxDensity = pointsInView;
             const density = baseDensity + (maxDensity - baseDensity) * ((optimizationLevel - 1) / 99);
             const step = Math.max(1, Math.floor(pointsInView / density));
             const displayedPoints = Math.floor(pointsInView / step);
-            
             densityInfo.textContent = `${displayedPoints.toLocaleString('pl-PL')} / ${pointsInView.toLocaleString('pl-PL')}`;
 
             if (renderMode === 'points') {
@@ -643,20 +688,6 @@
                 }
                 ctx.stroke();
             }
-        }
-
-        function drawAxesInfo(width, height) {
-            ctx.fillStyle = "#ccc"; ctx.font = "12px Arial"; ctx.textAlign = "center";
-            const { chartWidth } = getChartDimensions();
-            const timeRange = chartWidth / view.scaleX;
-            const timeFit = getBestTimeFit(timeRange);
-            ctx.fillText(`Czas [${timeFit.unit}]`, padding.left + chartWidth/2, height - 5);
-            ctx.save();
-            ctx.translate(padding.left - 45, padding.top + (height - padding.top - padding.bottom)/2);
-            ctx.rotate(-Math.PI/2);
-            ctx.textAlign = "center";
-            ctx.fillText("Napięcie [V]", 0, 0);
-            ctx.restore();
         }
 
         // --- Logika Kursorów ---
@@ -709,8 +740,6 @@
                 autoMeasurementsPanel.innerHTML = 'Zbyt mało danych';
                 return;
             }
-
-            // Subsampling for performance
             const MAX_SAMPLES_FOR_ANALYSIS = 10000;
             let dataForAnalysis = originalData;
             let analysisIncrement = increment;
@@ -719,7 +748,6 @@
                 dataForAnalysis = originalData.filter((_, i) => i % step === 0);
                 analysisIncrement = increment * step;
             }
-
             let min = dataForAnalysis[0], max = dataForAnalysis[0], sum = 0, sumSq = 0;
             for (const v of dataForAnalysis) {
                 if (v < min) min = v;
@@ -730,18 +758,14 @@
             const avg = sum / dataForAnalysis.length;
             const rms = Math.sqrt(sumSq / dataForAnalysis.length);
             const vpp = max - min;
-            
-            // Robust frequency detection (Schmitt trigger logic)
             const highThreshold = avg + vpp * 0.2;
             const lowThreshold = avg - vpp * 0.2;
             let state = 'looking_for_high';
             const periods = [];
             let lastUpCrossingIndex = -1;
-
             for (let i = 1; i < dataForAnalysis.length; i++) {
                 const prev_v = dataForAnalysis[i-1];
                 const curr_v = dataForAnalysis[i];
-
                 if (state === 'looking_for_high' && prev_v < highThreshold && curr_v >= highThreshold) {
                     if (lastUpCrossingIndex !== -1) {
                         const periodInSamples = i - lastUpCrossingIndex;
@@ -753,13 +777,11 @@
                     state = 'looking_for_high';
                 }
             }
-            
             let avgPeriod = null;
             if (periods.length > 0) {
                 avgPeriod = periods.reduce((a, b) => a + b, 0) / periods.length;
             }
             const frequency = avgPeriod ? 1 / avgPeriod : null;
-
             autoMeasurementsPanel.innerHTML = `
                 Vpp: ${formatValue(vpp, 'V')}<br>
                 Vmax: ${formatValue(max, 'V')}<br>
@@ -769,6 +791,124 @@
                 Okres: ${formatValue(avgPeriod, 's')}<br>
                 ƒ: ${formatValue(frequency, 'Hz')}
             `;
+        }
+
+        // --- Logika FFT ---
+        function toggleFFT() {
+            fftMode.enabled = !fftMode.enabled;
+            fftBtn.classList.toggle('active', fftMode.enabled);
+            if (fftMode.enabled) {
+                if (cursors.enabled) toggleCursors();
+                if (autoMeasurements.enabled) toggleAutoMeasurements();
+                cursorsBtn.disabled = true;
+                autoMeasureBtn.disabled = true;
+                calculateFFT();
+            } else {
+                cursorsBtn.disabled = false;
+                autoMeasureBtn.disabled = false;
+            }
+            draw();
+        }
+
+        function calculateFFT() {
+            const { startIndex, endIndex } = getVisibleDataIndices();
+            let samples = allVoltages.slice(startIndex, endIndex);
+            if (samples.length < 2) {
+                fftMode.data = null;
+                return;
+            }
+            
+            for(let i=0; i < samples.length; i++) {
+                samples[i] *= 0.5 * (1 - Math.cos(2 * Math.PI * i / (samples.length - 1)));
+            }
+
+            const N = 1 << Math.ceil(Math.log2(samples.length));
+            const real = new Float32Array(N);
+            const imag = new Float32Array(N);
+            real.set(samples);
+
+            let j = 0;
+            for (let i = 0; i < N; i++) {
+                if (i < j) { [real[i], real[j]] = [real[j], real[i]]; }
+                let m = N >> 1;
+                while (j >= m && m > 0) { j -= m; m >>= 1; }
+                j += m;
+            }
+            for (let L = 2; L <= N; L <<= 1) {
+                const M = L >> 1;
+                const sr = Math.cos(Math.PI / M);
+                const si = -Math.sin(Math.PI / M);
+                let wr = 1, wi = 0;
+                for (j = 0; j < M; j++) {
+                    for (let i = j; i < N; i += L) {
+                        const k = i + M;
+                        const tr = wr * real[k] - wi * imag[k];
+                        const ti = wr * imag[k] + wi * real[k];
+                        real[k] = real[i] - tr;
+                        imag[k] = imag[i] - ti;
+                        real[i] += tr;
+                        imag[i] += ti;
+                    }
+                    [wr, wi] = [wr * sr - wi * si, wr * si + wi * sr];
+                }
+            }
+
+            const magnitudes = new Float32Array(N / 2);
+            for (let i = 0; i < N / 2; i++) {
+                const mag = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]) / N;
+                magnitudes[i] = 20 * Math.log10(mag);
+            }
+            fftMode.data = magnitudes;
+        }
+
+        function drawFFTGrid(width, height) {
+            const nyquist = (1 / increment) / 2;
+            ctx.textAlign = "center";
+            const freqFit = getBestFreqFit(nyquist);
+            const numLinesX = 10;
+            for (let i = 0; i <= numLinesX; i++) {
+                const x = (i / numLinesX) * width;
+                ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5;
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+                const freq = (i / numLinesX) * nyquist;
+                const label = (freq * freqFit.multiplier).toFixed(1).replace(/\.0$/, '');
+                ctx.fillText(label, x, height + 15);
+            }
+
+            ctx.textAlign = "right";
+            const numLinesY = 10;
+            for (let i = 0; i <= numLinesY; i++) {
+                const y = (i / numLinesY) * height;
+                ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5;
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+                const db = fftMode.maxDb - (i / numLinesY) * (fftMode.maxDb - fftMode.minDb);
+                ctx.fillText(db.toFixed(0), -8, y + 3);
+            }
+        }
+
+        function drawFFT(width, height) {
+            if (!fftMode.data) return;
+            const magnitudes = fftMode.data;
+            let minDb = Infinity, maxDb = -Infinity;
+            for(const v of magnitudes) {
+                if (isFinite(v)) {
+                    if (v < minDb) minDb = v;
+                    if (v > maxDb) maxDb = v;
+                }
+            }
+            if (minDb === Infinity) { minDb = -100; maxDb = 0; }
+            fftMode.minDb = minDb; fftMode.maxDb = maxDb;
+            const dbRange = maxDb - minDb;
+            
+            ctx.strokeStyle = '#33ff99'; ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let i = 0; i < magnitudes.length; i++) {
+                const x = (i / magnitudes.length) * width;
+                const y = height - ((magnitudes[i] - minDb) / dbRange) * height;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
         }
 
         init();
