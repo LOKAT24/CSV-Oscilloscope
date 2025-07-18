@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wydajny Wykres Canvas z Pomiarami</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .header {
+            flex-shrink: 0;
+            padding: 10px 20px;
+            background-color: #2a2a2a;
+            text-align: center;
+            border-bottom: 1px solid #444;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .main-controls-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            align-items: flex-start;
+            width: 100%;
+            padding: 10px 0;
+        }
+        .control-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            border: 1px solid #444;
+            padding: 10px 15px;
+            border-radius: 8px;
+            background-color: #333;
+        }
+        .section-title {
+            font-weight: bold;
+            color: #00aaff;
+            margin-bottom: 5px;
+            font-size: 1em;
+            width: 100%;
+            text-align: center;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+        h1 {
+            margin: 0 0 5px 0;
+            color: #ffffff;
+            font-size: 1.5em;
+        }
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-family: inherit;
+            transition: background-color 0.3s;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .btn svg {
+            width: 16px;
+            height: 16px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .btn.active {
+            background-color: #0056b3;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        #file-input {
+            display: none;
+        }
+        .radio-group {
+            display: flex;
+            background-color: #444;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 15px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            color: #ccc;
+            font-size: 0.9em;
+        }
+        .radio-group svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+        }
+        .radio-group input[type="radio"] { display: none; }
+        .radio-group input[type="radio"]:checked + svg + span { color: #fff; }
+        .radio-group label:has(input:checked) { background-color: #007bff; }
+        #status, #info-bar, .hint-text {
+            font-size: 0.9em;
+            color: #bbb;
+            min-height: 1.1em;
+            width: 100%;
+        }
+        .hint-text {
+            color: #888;
+            margin-top: 5px;
+        }
+        .slider-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #ccc;
+            font-size: 0.9em;
+        }
+        #density-info {
+            font-family: monospace;
+            font-size: 0.9em;
+            background-color: #222;
+            padding: 2px 6px;
+            border-radius: 3px;
+            min-width: 100px;
+            text-align: center;
+        }
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+        }
+        canvas {
+            display: block;
+            background-color: #222;
+            border-radius: 4px;
+            width: 100%;
+            height: 100%;
+        }
+        .panel {
+            position: absolute;
+            background-color: rgba(40, 40, 40, 0.8);
+            border: 1px solid #666;
+            border-radius: 5px;
+            padding: 10px;
+            font-size: 12px;
+            font-family: monospace;
+            color: #eee;
+            pointer-events: none;
+            display: none;
+        }
+        #measurements-panel {
+            top: 10px;
+            right: 10px;
+        }
+        #auto-measurements-panel {
+            top: 10px;
+            left: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Wizualizator Przebiegów CSV</h1>
+        <div class="main-controls-container">
+            <div class="control-section">
+                <span class="section-title">Plik i Widok</span>
+                <label for="file-input" class="btn">
+                    <svg viewBox="0 0 24 24" style="fill:currentColor; stroke:none;"><path d="M4 4h7l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></svg>
+                    <span>Wybierz plik</span>
+                </label>
+                <input type="file" id="file-input" accept=".csv,.txt">
+                <button id="reset-view-btn" class="btn">
+                    <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.2-3.2l-4.2 4.2A4 4 0 1 0 11 18.9V22h-1a10 10 0 0 1-8-10.5z"></path></svg>
+                    <span>Resetuj Widok</span>
+                </button>
+            </div>
+            <div class="control-section">
+                <span class="section-title">Tryb Wyświetlania</span>
+                <div class="radio-group" id="render-mode-controls">
+                    <label>
+                        <input type="radio" name="renderMode" value="points" checked>
+                        <svg viewBox="0 0 24 24" style="fill:currentColor; stroke:none;"><circle cx="12" cy="12" r="1.5"></circle><circle cx="19" cy="5" r="1.5"></circle><circle cx="5" cy="19" r="1.5"></circle><circle cx="5" cy="5" r="1.5"></circle><circle cx="19" cy="19" r="1.5"></circle></svg>
+                        <span>Punkty</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="renderMode" value="line">
+                        <svg viewBox="0 0 24 24"><polyline points="3 12 8 7 16 17 21 12"></polyline></svg>
+                        <span>Linia</span>
+                    </label>
+                </div>
+                 <div class="slider-control">
+                     <label for="optimization-slider">Gęstość:</label>
+                     <input type="range" id="optimization-slider" min="1" max="100" value="25">
+                     <span id="density-info"></span>
+                </div>
+            </div>
+            <div class="control-section">
+                <span class="section-title">Narzędzia</span>
+                <button id="cursors-toggle-btn" class="btn">
+                    <svg viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M9 4v16M15 4v16"></path></svg>
+                    <span>Kursory</span>
+                </button>
+                <button id="auto-measure-toggle-btn" class="btn">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><rect x="7" y="7" width="3" height="5"></rect><rect x="14" y="7" width="3" height="5"></rect><line x1="7" y1="15" x2="17" y2="15"></line><line x1="10" y1="12" x2="14" y2="12"></line></svg>
+                    <span>Pomiary Auto</span>
+                </button>
+            </div>
+        </div>
+        <div id="status">Wybierz plik, aby rozpocząć.</div>
+        <div id="info-bar"></div>
+        <div class="hint-text">Wskazówka: Użyj kółka myszy do zoomu osi X, a Ctrl + kółko myszy do zoomu osi Y.</div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="plot-canvas"></canvas>
+        <div id="measurements-panel" class="panel"></div>
+        <div id="auto-measurements-panel" class="panel"></div>
+    </div>
+
+    <script>
+        // --- Elementy DOM ---
+        const fileInput = document.getElementById('file-input');
+        const statusDiv = document.getElementById('status');
+        const infoBar = document.getElementById('info-bar');
+        const canvasContainer = document.getElementById('canvas-container');
+        const canvas = document.getElementById('plot-canvas');
+        const ctx = canvas.getContext('2d');
+        const cursorsBtn = document.getElementById('cursors-toggle-btn');
+        const autoMeasureBtn = document.getElementById('auto-measure-toggle-btn');
+        const resetViewBtn = document.getElementById('reset-view-btn');
+        const optimizationSlider = document.getElementById('optimization-slider');
+        const measurementsPanel = document.getElementById('measurements-panel');
+        const autoMeasurementsPanel = document.getElementById('auto-measurements-panel');
+        const densityInfo = document.getElementById('density-info');
+
+        // --- Globalne zmienne ---
+        let allVoltages = [];
+        let startTime = 0;
+        let increment = 1e-9;
+        let dataMinY = 0, dataMaxY = 0;
+        let renderMode = 'points';
+        let optimizationLevel = 25;
+        const padding = { top: 20, right: 20, bottom: 40, left: 60 };
+
+        // --- Stan widoku (transformacja) ---
+        const view = {
+            scaleX: 1.0, scaleY: 1.0, offsetX: 0, offsetY: 0,
+            panning: false, lastMouseX: 0, lastMouseY: 0
+        };
+        
+        // --- Stan kursorów i pomiarów ---
+        const cursors = {
+            enabled: false, v1: 0.75, v2: 0.25, t1: 0.25, t2: 0.75,
+            dragging: null, hovering: null, grabDistance: 10
+        };
+        const autoMeasurements = { enabled: false };
+
+        // --- Inicjalizacja ---
+        function init() {
+            setupCanvas();
+            fileInput.addEventListener('change', handleFileSelect);
+            
+            document.querySelectorAll('input[name="renderMode"]').forEach(radio => {
+                radio.addEventListener('change', function() { renderMode = this.value; draw(); });
+            });
+            
+            cursorsBtn.addEventListener('click', toggleCursors);
+            autoMeasureBtn.addEventListener('click', toggleAutoMeasurements);
+            resetViewBtn.addEventListener('click', () => { if(allVoltages.length > 0) { resetView(); draw(); } });
+            optimizationSlider.addEventListener('input', (e) => {
+                optimizationLevel = parseInt(e.target.value, 10);
+                draw();
+            });
+
+            canvas.addEventListener('wheel', handleZoom);
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('mouseleave', handleMouseUp);
+            window.addEventListener('resize', setupCanvas);
+        }
+
+        function setupCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvasContainer.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            draw();
+        }
+
+        // --- Obsługa Plików ---
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            statusDiv.textContent = '⏳ Wczytywanie pliku...';
+            infoBar.textContent = '';
+            const reader = new FileReader();
+            reader.onload = e => {
+                statusDiv.textContent = '⚙️ Przetwarzanie danych... To może potrwać...';
+                setTimeout(() => {
+                    try {
+                        parseData(e.target.result);
+                        resetView();
+                        draw();
+                        statusDiv.textContent = `✅ Gotowe! Użyj kółka myszy do zoomu, przeciągnij by przesuwać.`;
+                    } catch (error) {
+                        statusDiv.textContent = `❌ Błąd: ${error.message}`;
+                        infoBar.textContent = 'Sprawdź format pliku lub konsolę (F12) po więcej szczegółów.';
+                        console.error(error);
+                    }
+                }, 50);
+            };
+            reader.readAsText(file);
+        }
+
+        function parseData(content) {
+            const lines = content.split(/\r?\n/).filter(line => line.trim() !== '');
+            if (lines.length < 3) throw new Error("Plik jest zbyt krótki lub ma nieprawidłowy format.");
+            let columnSeparator = ';', decimalSeparator = ',';
+            const headerLine2 = lines[1];
+            if (headerLine2.split(';').length >= 3) {
+                columnSeparator = ';';
+                decimalSeparator = headerLine2.split(';')[1].includes(',') ? ',' : '.';
+            } else if (headerLine2.split(',').length >= 3) {
+                columnSeparator = ',';
+                decimalSeparator = '.';
+            } else { throw new Error("Nie udało się automatycznie wykryć separatora kolumn."); }
+            infoBar.textContent = `Wykryte separatory: Kolumna = "${columnSeparator}", Dziesiętny = "${decimalSeparator}"`;
+            const parseNumber = (str) => parseFloat(str?.trim().replace(decimalSeparator, '.'));
+            const metaLineParts = lines[1].trim().split(columnSeparator);
+            startTime = parseNumber(metaLineParts[1]);
+            increment = parseNumber(metaLineParts[2]);
+            if (isNaN(startTime) || isNaN(increment)) throw new Error("Nie udało się odczytać metadanych.");
+            allVoltages = new Float32Array(lines.length - 2);
+            let count = 0;
+            dataMinY = Infinity; dataMaxY = -Infinity;
+            for (let i = 2; i < lines.length; i++) {
+                const valueStr = lines[i].trim().split(columnSeparator)[0];
+                if (valueStr) {
+                    const v = parseNumber(valueStr);
+                    if (!isNaN(v)) {
+                        allVoltages[count++] = v;
+                        if (v < dataMinY) dataMinY = v;
+                        if (v > dataMaxY) dataMaxY = v;
+                    }
+                }
+            }
+            allVoltages = allVoltages.slice(0, count);
+            if (allVoltages.length === 0) throw new Error("Nie znaleziono żadnych prawidłowych danych.");
+        }
+        
+        // --- Logika Interakcji ---
+        function resetView() {
+            const { chartWidth, chartHeight } = getChartDimensions();
+            view.offsetX = 0;
+            view.scaleX = chartWidth / (allVoltages.length * increment);
+            const yRange = dataMaxY - dataMinY;
+            view.scaleY = - (chartHeight / (yRange || 1));
+            view.offsetY = chartHeight / 2 - ((dataMaxY + dataMinY) / 2) * view.scaleY;
+        }
+
+        function handleZoom(e) {
+            e.preventDefault();
+            if (cursors.dragging) return;
+
+            const z = 1 + (e.deltaY < 0 ? 1 : -1) * 0.1;
+
+            if (e.ctrlKey) {
+                const mouseY = e.offsetY - padding.top;
+                const v = (mouseY - view.offsetY) / view.scaleY;
+                view.scaleY *= z;
+                view.offsetY = mouseY - v * view.scaleY;
+            } else {
+                const mouseX = e.offsetX - padding.left;
+                const t = (mouseX - view.offsetX) / view.scaleX;
+                view.scaleX *= z;
+                view.offsetX = mouseX - t * view.scaleX;
+            }
+            
+            draw();
+        }
+
+        function handleMouseDown(e) {
+            if (cursors.enabled) {
+                const { chartWidth, chartHeight } = getChartDimensions();
+                const mouseX = e.offsetX - padding.left;
+                const mouseY = e.offsetY - padding.top;
+                const dpr = window.devicePixelRatio || 1;
+                const grabDist = cursors.grabDistance / dpr;
+                if (Math.abs(mouseX - cursors.t1 * chartWidth) < grabDist) cursors.dragging = 't1';
+                else if (Math.abs(mouseX - cursors.t2 * chartWidth) < grabDist) cursors.dragging = 't2';
+                else if (Math.abs(mouseY - cursors.v1 * chartHeight) < grabDist) cursors.dragging = 'v1';
+                else if (Math.abs(mouseY - cursors.v2 * chartHeight) < grabDist) cursors.dragging = 'v2';
+            }
+            if (!cursors.dragging) {
+                view.panning = true;
+                view.lastMouseX = e.offsetX;
+                view.lastMouseY = e.offsetY;
+            }
+        }
+
+        function handleMouseMove(e) {
+            const { chartWidth, chartHeight } = getChartDimensions();
+            const mouseX = e.offsetX - padding.left;
+            const mouseY = e.offsetY - padding.top;
+            if (cursors.dragging) {
+                if (cursors.dragging.startsWith('t')) {
+                    cursors[cursors.dragging] = Math.max(0, Math.min(1, mouseX / chartWidth));
+                } else {
+                    cursors[cursors.dragging] = Math.max(0, Math.min(1, mouseY / chartHeight));
+                }
+                draw();
+            } else if (view.panning) {
+                const dx = e.offsetX - view.lastMouseX;
+                const dy = e.offsetY - view.lastMouseY;
+                view.offsetX += dx; view.offsetY += dy;
+                view.lastMouseX = e.offsetX; view.lastMouseY = e.offsetY;
+                draw();
+            } else if (cursors.enabled) {
+                const dpr = window.devicePixelRatio || 1;
+                const grabDist = cursors.grabDistance / dpr;
+                let hovering = null;
+                if (Math.abs(mouseX - cursors.t1 * chartWidth) < grabDist || Math.abs(mouseX - cursors.t2 * chartWidth) < grabDist) {
+                    hovering = 'col-resize';
+                } else if (Math.abs(mouseY - cursors.v1 * chartHeight) < grabDist || Math.abs(mouseY - cursors.v2 * chartHeight) < grabDist) {
+                    hovering = 'row-resize';
+                }
+                canvas.style.cursor = hovering || 'default';
+            }
+        }
+
+        function handleMouseUp() {
+            view.panning = false;
+            cursors.dragging = null;
+        }
+
+        // --- Funkcje pomocnicze do rysowania ---
+        function getChartDimensions() {
+            const { width, height } = canvas.getBoundingClientRect();
+            return {
+                chartWidth: width - padding.left - padding.right,
+                chartHeight: height - padding.top - padding.bottom
+            };
+        }
+        function getVisibleDataIndices() {
+            const { chartWidth } = getChartDimensions();
+            const startIndex = Math.max(0, Math.floor((-view.offsetX / view.scaleX - startTime) / increment));
+            const endIndex = Math.min(allVoltages.length, Math.ceil(((chartWidth - view.offsetX) / view.scaleX - startTime) / increment));
+            return { startIndex, endIndex };
+        }
+        function getBestTimeFit(range) {
+            const absRange = Math.abs(range);
+            if (absRange >= 1) return { multiplier: 1, unit: 's' };
+            if (absRange >= 1e-3) return { multiplier: 1e3, unit: 'ms' };
+            if (absRange >= 1e-6) return { multiplier: 1e6, unit: 'µs' };
+            if (absRange >= 1e-9) return { multiplier: 1e9, unit: 'ns' };
+            return { multiplier: 1e12, unit: 'ps' };
+        }
+        function formatValue(value, unit) {
+            if (value === null || isNaN(value)) return '---';
+            if (Math.abs(value) >= 1e12) return value.toExponential(2) + ' ' + unit;
+            if (Math.abs(value) >= 1e9) return (value / 1e9).toFixed(2) + ' G' + unit;
+            if (Math.abs(value) >= 1e6) return (value / 1e6).toFixed(2) + ' M' + unit;
+            if (Math.abs(value) >= 1e3) return (value / 1e3).toFixed(2) + ' k' + unit;
+            if (Math.abs(value) >= 1) return value.toFixed(2) + ' ' + unit;
+            if (Math.abs(value) >= 1e-3) return (value * 1e3).toFixed(2) + ' m' + unit;
+            if (Math.abs(value) >= 1e-6) return (value * 1e6).toFixed(2) + ' µ' + unit;
+            if (Math.abs(value) >= 1e-9) return (value * 1e9).toFixed(2) + ' n' + unit;
+            if (Math.abs(value) >= 1e-12) return (value * 1e12).toFixed(2) + ' p' + unit;
+            if (value === 0) return '0 ' + unit;
+            return value.toExponential(2) + ' ' + unit;
+        }
+
+        // --- Główna funkcja rysująca ---
+        function draw() {
+            const { width, height } = canvas.getBoundingClientRect();
+            ctx.clearRect(0, 0, width, height);
+            if (allVoltages.length === 0) {
+                ctx.fillStyle = "#666"; ctx.textAlign = "center"; ctx.font = "16px Arial";
+                ctx.fillText("Brak danych do wyświetlenia. Wybierz plik.", width / 2, height / 2);
+                densityInfo.textContent = '';
+                return;
+            }
+            const { chartWidth, chartHeight } = getChartDimensions();
+            ctx.save();
+            ctx.translate(padding.left, padding.top);
+            drawGrid(chartWidth, chartHeight);
+            ctx.beginPath(); ctx.rect(0, 0, chartWidth, chartHeight); ctx.clip();
+            drawWaveform(chartWidth, chartHeight);
+            if (cursors.enabled) drawCursors(chartWidth, chartHeight);
+            ctx.restore();
+            drawAxesInfo(width, height);
+            if (cursors.enabled) updateMeasurementsPanel();
+            if (autoMeasurements.enabled) updateAutoMeasurementsPanel();
+        }
+
+        function drawGrid(width, height) {
+            ctx.font = "10px Arial"; ctx.fillStyle = "#888";
+            // Siatka pionowa (czas)
+            ctx.textAlign = "center";
+            const timeRange = width / view.scaleX;
+            const timeFit = getBestTimeFit(timeRange);
+            let timeStep = Math.pow(10, Math.floor(Math.log10(timeRange))) / 10;
+            if (timeStep < 1e-15) timeStep = 1e-15;
+            const firstTime = -view.offsetX / view.scaleX;
+            let time = Math.ceil(firstTime / timeStep) * timeStep;
+            for(let i=0; i<width*2; i++) {
+                const x = time * view.scaleX + view.offsetX;
+                if (x > width + 10) break;
+                if (x >= -10) {
+                    const isZeroAxis = Math.abs(time) < 1e-12;
+                    ctx.strokeStyle = isZeroAxis ? '#00aaff' : '#444';
+                    ctx.lineWidth = isZeroAxis ? 1 : 0.5;
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+                    if(!isZeroAxis) {
+                        const labelValue = (time * timeFit.multiplier).toFixed(2).replace(/\.00$/, '');
+                        ctx.fillText(labelValue, x, height + 15);
+                    }
+                }
+                time += timeStep;
+            }
+            // Siatka pozioma (napięcie)
+            ctx.textAlign = "right";
+            const voltRange = height / Math.abs(view.scaleY);
+            let voltStep = Math.pow(10, Math.floor(Math.log10(voltRange))) / 5;
+            if (voltStep <= 0) voltStep = 0.1;
+            const vTop = (0 - view.offsetY) / view.scaleY;
+            let volt = Math.floor(vTop / voltStep) * voltStep;
+             for(let i=0; i<2 * height; i++) {
+                const y = volt * view.scaleY + view.offsetY;
+                if (y > height + 10) break;
+                if (y >= -10) {
+                    const isZeroAxis = Math.abs(volt) < 1e-9;
+                    ctx.strokeStyle = isZeroAxis ? '#00aaff' : '#444';
+                    ctx.lineWidth = isZeroAxis ? 1 : 0.5;
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+                    if(!isZeroAxis) ctx.fillText(volt.toFixed(2), -8, y + 3);
+                }
+                volt -= voltStep;
+            }
+        }
+
+        function drawWaveform(width, height) {
+            const waveColor = '#33ff99';
+            const { startIndex, endIndex } = getVisibleDataIndices();
+            const pointsInView = endIndex - startIndex;
+            
+            // Logika optymalizacji
+            const baseDensity = width * 2;
+            const maxDensity = pointsInView;
+            const density = baseDensity + (maxDensity - baseDensity) * ((optimizationLevel - 1) / 99);
+            const step = Math.max(1, Math.floor(pointsInView / density));
+            const displayedPoints = Math.floor(pointsInView / step);
+            
+            densityInfo.textContent = `${displayedPoints.toLocaleString('pl-PL')} / ${pointsInView.toLocaleString('pl-PL')}`;
+
+            if (renderMode === 'points') {
+                ctx.fillStyle = waveColor;
+                for (let i = startIndex; i < endIndex; i += step) {
+                    const x = (startTime + i * increment) * view.scaleX + view.offsetX;
+                    const y = allVoltages[i] * view.scaleY + view.offsetY;
+                    ctx.fillRect(x - 0.5, y - 0.5, 2, 2);
+                }
+            } else { // 'line' mode
+                ctx.strokeStyle = waveColor; ctx.lineWidth = 1; ctx.beginPath();
+                if (startIndex >= endIndex) return;
+                let i = startIndex;
+                let x = (startTime + i * increment) * view.scaleX + view.offsetX;
+                let y = allVoltages[i] * view.scaleY + view.offsetY;
+                ctx.moveTo(x, y);
+                for (i = startIndex + step; i < endIndex; i += step) {
+                    x = (startTime + i * increment) * view.scaleX + view.offsetX;
+                    y = allVoltages[i] * view.scaleY + view.offsetY;
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+        }
+
+        function drawAxesInfo(width, height) {
+            ctx.fillStyle = "#ccc"; ctx.font = "12px Arial"; ctx.textAlign = "center";
+            const { chartWidth } = getChartDimensions();
+            const timeRange = chartWidth / view.scaleX;
+            const timeFit = getBestTimeFit(timeRange);
+            ctx.fillText(`Czas [${timeFit.unit}]`, padding.left + chartWidth/2, height - 5);
+            ctx.save();
+            ctx.translate(padding.left - 45, padding.top + (height - padding.top - padding.bottom)/2);
+            ctx.rotate(-Math.PI/2);
+            ctx.textAlign = "center";
+            ctx.fillText("Napięcie [V]", 0, 0);
+            ctx.restore();
+        }
+
+        // --- Logika Kursorów ---
+        function toggleCursors() {
+            cursors.enabled = !cursors.enabled;
+            cursorsBtn.classList.toggle('active', cursors.enabled);
+            measurementsPanel.style.display = cursors.enabled ? 'block' : 'none';
+            draw();
+        }
+        function drawCursors(width, height) {
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#ffa500'; // Czas
+            const x1 = cursors.t1 * width;
+            const x2 = cursors.t2 * width;
+            ctx.beginPath(); ctx.moveTo(x1, 0); ctx.lineTo(x1, height); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(x2, 0); ctx.lineTo(x2, height); ctx.stroke();
+            ctx.strokeStyle = '#9370db'; // Napięcie
+            const y1 = cursors.v1 * height;
+            const y2 = cursors.v2 * height;
+            ctx.beginPath(); ctx.moveTo(0, y1); ctx.lineTo(width, y1); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, y2); ctx.lineTo(width, y2); ctx.stroke();
+        }
+        function updateMeasurementsPanel() {
+            const { chartWidth, chartHeight } = getChartDimensions();
+            const t1_val = (cursors.t1 * chartWidth - view.offsetX) / view.scaleX;
+            const t2_val = (cursors.t2 * chartWidth - view.offsetX) / view.scaleX;
+            const v1_val = (cursors.v1 * chartHeight - view.offsetY) / view.scaleY;
+            const v2_val = (cursors.v2 * chartHeight - view.offsetY) / view.scaleY;
+            const deltaT = Math.abs(t1_val - t2_val);
+            const deltaV = Math.abs(v1_val - v2_val);
+            const frequency = deltaT > 0 ? 1 / deltaT : 0;
+            measurementsPanel.innerHTML = `
+                ΔV: ${formatValue(deltaV, 'V')}<br>
+                Δt: ${formatValue(deltaT, 's')}<br>
+                ƒ: ${formatValue(frequency, 'Hz')}
+            `;
+        }
+
+        // --- Logika Pomiarów Automatycznych ---
+        function toggleAutoMeasurements() {
+            autoMeasurements.enabled = !autoMeasurements.enabled;
+            autoMeasureBtn.classList.toggle('active', autoMeasurements.enabled);
+            autoMeasurementsPanel.style.display = autoMeasurements.enabled ? 'block' : 'none';
+            draw();
+        }
+        function updateAutoMeasurementsPanel() {
+            const { startIndex, endIndex } = getVisibleDataIndices();
+            const originalData = allVoltages.slice(startIndex, endIndex);
+            if (originalData.length < 2) {
+                autoMeasurementsPanel.innerHTML = 'Zbyt mało danych';
+                return;
+            }
+
+            // Subsampling for performance
+            const MAX_SAMPLES_FOR_ANALYSIS = 10000;
+            let dataForAnalysis = originalData;
+            let analysisIncrement = increment;
+            if (originalData.length > MAX_SAMPLES_FOR_ANALYSIS) {
+                const step = Math.floor(originalData.length / MAX_SAMPLES_FOR_ANALYSIS);
+                dataForAnalysis = originalData.filter((_, i) => i % step === 0);
+                analysisIncrement = increment * step;
+            }
+
+            let min = dataForAnalysis[0], max = dataForAnalysis[0], sum = 0, sumSq = 0;
+            for (const v of dataForAnalysis) {
+                if (v < min) min = v;
+                if (v > max) max = v;
+                sum += v;
+                sumSq += v * v;
+            }
+            const avg = sum / dataForAnalysis.length;
+            const rms = Math.sqrt(sumSq / dataForAnalysis.length);
+            const vpp = max - min;
+            
+            // Robust frequency detection (Schmitt trigger logic)
+            const highThreshold = avg + vpp * 0.2;
+            const lowThreshold = avg - vpp * 0.2;
+            let state = 'looking_for_high';
+            const periods = [];
+            let lastUpCrossingIndex = -1;
+
+            for (let i = 1; i < dataForAnalysis.length; i++) {
+                const prev_v = dataForAnalysis[i-1];
+                const curr_v = dataForAnalysis[i];
+
+                if (state === 'looking_for_high' && prev_v < highThreshold && curr_v >= highThreshold) {
+                    if (lastUpCrossingIndex !== -1) {
+                        const periodInSamples = i - lastUpCrossingIndex;
+                        periods.push(periodInSamples * analysisIncrement);
+                    }
+                    lastUpCrossingIndex = i;
+                    state = 'looking_for_low';
+                } else if (state === 'looking_for_low' && prev_v > lowThreshold && curr_v <= lowThreshold) {
+                    state = 'looking_for_high';
+                }
+            }
+            
+            let avgPeriod = null;
+            if (periods.length > 0) {
+                avgPeriod = periods.reduce((a, b) => a + b, 0) / periods.length;
+            }
+            const frequency = avgPeriod ? 1 / avgPeriod : null;
+
+            autoMeasurementsPanel.innerHTML = `
+                Vpp: ${formatValue(vpp, 'V')}<br>
+                Vmax: ${formatValue(max, 'V')}<br>
+                Vmin: ${formatValue(min, 'V')}<br>
+                Vavg: ${formatValue(avg, 'V')}<br>
+                Vrms: ${formatValue(rms, 'V')}<br>
+                Okres: ${formatValue(avgPeriod, 's')}<br>
+                ƒ: ${formatValue(frequency, 'Hz')}
+            `;
+        }
+
+        init();
+    </script>
+</body>
+</html>
+
