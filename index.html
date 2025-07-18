@@ -278,10 +278,8 @@
         const padding = { top: 20, right: 20, bottom: 40, left: 60 };
 
         // --- Stan widoku (transformacja) ---
-        const view = {
-            scaleX: 1.0, scaleY: 1.0, offsetX: 0, offsetY: 0,
-            panning: false, lastMouseX: 0, lastMouseY: 0
-        };
+        const view = { scaleX: 1.0, scaleY: 1.0, offsetX: 0, offsetY: 0, panning: false, lastMouseX: 0, lastMouseY: 0 };
+        const fftView = { scaleX: 1.0, scaleY: 1.0, offsetX: 0, offsetY: 0 };
         
         // --- Stan narzędzi ---
         const cursors = { enabled: false, v1: 0.75, v2: 0.25, t1: 0.25, t2: 0.75, dragging: null, hovering: null, grabDistance: 10 };
@@ -304,7 +302,12 @@
             cursorsBtn.addEventListener('click', toggleCursors);
             autoMeasureBtn.addEventListener('click', toggleAutoMeasurements);
             fftBtn.addEventListener('click', toggleFFT);
-            resetViewBtn.addEventListener('click', () => { if(allVoltages.length > 0) { resetView(); draw(); } });
+            resetViewBtn.addEventListener('click', () => { 
+                if(allVoltages.length === 0) return;
+                if (fftMode.enabled) { resetFFTView(); } 
+                else { resetView(); }
+                draw(); 
+            });
             optimizationSlider.addEventListener('input', (e) => {
                 optimizationLevel = parseInt(e.target.value, 10);
                 draw();
@@ -404,16 +407,31 @@
             e.preventDefault();
             if (cursors.dragging) return;
             const z = 1 + (e.deltaY < 0 ? 1 : -1) * 0.1;
-            if (e.ctrlKey) {
-                const mouseY = e.offsetY - padding.top;
-                const v = (mouseY - view.offsetY) / view.scaleY;
-                view.scaleY *= z;
-                view.offsetY = mouseY - v * view.scaleY;
+
+            if (fftMode.enabled) {
+                if (e.ctrlKey) {
+                    const mouseY = e.offsetY - padding.top;
+                    const db = (mouseY - fftView.offsetY) / fftView.scaleY;
+                    fftView.scaleY *= z;
+                    fftView.offsetY = mouseY - db * fftView.scaleY;
+                } else {
+                    const mouseX = e.offsetX - padding.left;
+                    const freq = (mouseX - fftView.offsetX) / fftView.scaleX;
+                    fftView.scaleX *= z;
+                    fftView.offsetX = mouseX - freq * fftView.scaleX;
+                }
             } else {
-                const mouseX = e.offsetX - padding.left;
-                const t = (mouseX - view.offsetX) / view.scaleX;
-                view.scaleX *= z;
-                view.offsetX = mouseX - t * view.scaleX;
+                if (e.ctrlKey) {
+                    const mouseY = e.offsetY - padding.top;
+                    const v = (mouseY - view.offsetY) / view.scaleY;
+                    view.scaleY *= z;
+                    view.offsetY = mouseY - v * view.scaleY;
+                } else {
+                    const mouseX = e.offsetX - padding.left;
+                    const t = (mouseX - view.offsetX) / view.scaleX;
+                    view.scaleX *= z;
+                    view.offsetX = mouseX - t * view.scaleX;
+                }
             }
             draw();
         }
@@ -438,23 +456,23 @@
         }
 
         function handleMouseMove(e) {
-            const { chartWidth, chartHeight } = getChartDimensions();
-            const mouseX = e.offsetX - padding.left;
-            const mouseY = e.offsetY - padding.top;
-            if (cursors.dragging) {
-                if (cursors.dragging.startsWith('t')) {
-                    cursors[cursors.dragging] = Math.max(0, Math.min(1, mouseX / chartWidth));
-                } else {
-                    cursors[cursors.dragging] = Math.max(0, Math.min(1, mouseY / chartHeight));
-                }
-                draw();
-            } else if (view.panning) {
+            if (view.panning) {
                 const dx = e.offsetX - view.lastMouseX;
                 const dy = e.offsetY - view.lastMouseY;
-                view.offsetX += dx; view.offsetY += dy;
-                view.lastMouseX = e.offsetX; view.lastMouseY = e.offsetY;
+                if (fftMode.enabled) {
+                    fftView.offsetX += dx;
+                    fftView.offsetY += dy;
+                } else {
+                    view.offsetX += dx;
+                    view.offsetY += dy;
+                }
+                view.lastMouseX = e.offsetX;
+                view.lastMouseY = e.offsetY;
                 draw();
             } else if (cursors.enabled && !fftMode.enabled) {
+                const { chartWidth, chartHeight } = getChartDimensions();
+                const mouseX = e.offsetX - padding.left;
+                const mouseY = e.offsetY - padding.top;
                 const dpr = window.devicePixelRatio || 1;
                 const grabDist = cursors.grabDistance / dpr;
                 let hovering = null;
@@ -526,13 +544,10 @@
                 densityInfo.textContent = '';
                 return;
             }
-            
             const { chartWidth, chartHeight } = getChartDimensions();
             
-            // Rysowanie siatki i etykiet osi (zawsze widoczne)
             drawAxes(width, height);
 
-            // Ustawienie obszaru przycinania i rysowanie zawartości
             ctx.save();
             ctx.translate(padding.left, padding.top);
             ctx.beginPath(); 
@@ -549,7 +564,6 @@
             
             ctx.restore();
 
-            // Aktualizacja paneli informacyjnych
             if (cursors.enabled && !fftMode.enabled) updateMeasurementsPanel();
             if (autoMeasurements.enabled && !fftMode.enabled) updateAutoMeasurementsPanel();
         }
@@ -560,11 +574,10 @@
             ctx.save();
             ctx.font = "10px Arial"; ctx.fillStyle = "#888";
 
-            // Tytuły osi
             ctx.textAlign = "center";
             if (fftMode.enabled) {
-                const nyquist = (1 / increment) / 2;
-                const freqFit = getBestFreqFit(nyquist);
+                const freqRange = chartWidth / fftView.scaleX;
+                const freqFit = getBestFreqFit(freqRange);
                 ctx.fillText(`Częstotliwość [${freqFit.unit}]`, padding.left + chartWidth/2, height - 5);
             } else {
                 const timeRange = chartWidth / view.scaleX;
@@ -577,7 +590,6 @@
             ctx.fillText(fftMode.enabled ? "Amplituda [dB]" : "Napięcie [V]", 0, 0);
             ctx.restore();
 
-            // Linie siatki i etykiety
             ctx.translate(padding.left, padding.top);
             if (fftMode.enabled) {
                 drawFFTGrid(chartWidth, chartHeight);
@@ -588,7 +600,6 @@
         }
 
         function drawGrid(width, height) {
-            // Siatka pionowa (czas)
             ctx.textAlign = "center";
             const timeRange = width / view.scaleX;
             const timeFit = getBestTimeFit(timeRange);
@@ -611,7 +622,6 @@
                 }
                 time += timeStep;
             }
-            // Siatka pozioma (napięcie)
             ctx.textAlign = "right";
             const voltRange = height / Math.abs(view.scaleY);
             let voltStep = Math.pow(10, Math.floor(Math.log10(voltRange))) / 5;
@@ -803,6 +813,7 @@
                 cursorsBtn.disabled = true;
                 autoMeasureBtn.disabled = true;
                 calculateFFT();
+                resetFFTView();
             } else {
                 cursorsBtn.disabled = false;
                 autoMeasureBtn.disabled = false;
@@ -860,53 +871,96 @@
             }
             fftMode.data = magnitudes;
         }
-
-        function drawFFTGrid(width, height) {
-            const nyquist = (1 / increment) / 2;
-            ctx.textAlign = "center";
-            const freqFit = getBestFreqFit(nyquist);
-            const numLinesX = 10;
-            for (let i = 0; i <= numLinesX; i++) {
-                const x = (i / numLinesX) * width;
-                ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5;
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-                const freq = (i / numLinesX) * nyquist;
-                const label = (freq * freqFit.multiplier).toFixed(1).replace(/\.0$/, '');
-                ctx.fillText(label, x, height + 15);
-            }
-
-            ctx.textAlign = "right";
-            const numLinesY = 10;
-            for (let i = 0; i <= numLinesY; i++) {
-                const y = (i / numLinesY) * height;
-                ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5;
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-                const db = fftMode.maxDb - (i / numLinesY) * (fftMode.maxDb - fftMode.minDb);
-                ctx.fillText(db.toFixed(0), -8, y + 3);
-            }
-        }
-
-        function drawFFT(width, height) {
+        
+        function resetFFTView() {
+            const { chartWidth, chartHeight } = getChartDimensions();
+            if (!fftMode.data) calculateFFT();
             if (!fftMode.data) return;
-            const magnitudes = fftMode.data;
+
+            const nyquist = (1 / increment) / 2;
+            fftView.scaleX = chartWidth / nyquist;
+            fftView.offsetX = 0;
+
             let minDb = Infinity, maxDb = -Infinity;
-            for(const v of magnitudes) {
+            for (const v of fftMode.data) {
                 if (isFinite(v)) {
                     if (v < minDb) minDb = v;
                     if (v > maxDb) maxDb = v;
                 }
             }
             if (minDb === Infinity) { minDb = -100; maxDb = 0; }
-            fftMode.minDb = minDb; fftMode.maxDb = maxDb;
+            
             const dbRange = maxDb - minDb;
+            fftView.scaleY = chartHeight / (dbRange || 1);
+            fftView.offsetY = -minDb * fftView.scaleY;
+        }
+
+        function drawFFTGrid(width, height) {
+            const nyquist = (1 / increment) / 2;
+            ctx.textAlign = "center";
+            const freqRange = width / fftView.scaleX;
+            const freqFit = getBestFreqFit(freqRange);
+            let freqStep = Math.pow(10, Math.floor(Math.log10(freqRange))) / 10;
+            if (freqStep <= 0) freqStep = 1;
+            const firstFreq = -fftView.offsetX / fftView.scaleX;
+            let freq = Math.ceil(firstFreq / freqStep) * freqStep;
+            for (let i = 0; i < width * 2; i++) {
+                const x = freq * fftView.scaleX + fftView.offsetX;
+                if (x > width + 10) break;
+                if (x >= -10) {
+                    ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5;
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+                    const labelValue = (freq * freqFit.multiplier).toFixed(2).replace(/\.00$/, '');
+                    ctx.fillText(labelValue, x, height + 15);
+                }
+                freq += freqStep;
+            }
+
+            ctx.textAlign = "right";
+            const dbRange = height / Math.abs(fftView.scaleY);
+            let dbStep = Math.pow(10, Math.floor(Math.log10(dbRange))) / 2;
+            if (dbStep < 1) dbStep = 1;
+            const firstDb = (height - fftView.offsetY) / fftView.scaleY;
+            let db = Math.floor(firstDb / dbStep) * dbStep;
+            for (let i = 0; i < height * 2; i++) {
+                const y = db * fftView.scaleY + fftView.offsetY;
+                if (y < -10) break;
+                if (y <= height + 10) {
+                    ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5;
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+                    ctx.fillText(db.toFixed(0), -8, y + 3);
+                }
+                db += dbStep;
+            }
+        }
+
+        function drawFFT(width, height) {
+            if (!fftMode.data) return;
+            const magnitudes = fftMode.data;
+            const nyquist = (1 / increment) / 2;
+            const freqStep = nyquist / magnitudes.length;
             
             ctx.strokeStyle = '#33ff99'; ctx.lineWidth = 1;
             ctx.beginPath();
+            
+            let firstPoint = true;
             for (let i = 0; i < magnitudes.length; i++) {
-                const x = (i / magnitudes.length) * width;
-                const y = height - ((magnitudes[i] - minDb) / dbRange) * height;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
+                const freq = i * freqStep;
+                const x = freq * fftView.scaleX + fftView.offsetX;
+                
+                if (x > width + 1) break; 
+                if (x >= -1) {
+                    const db = magnitudes[i];
+                    if (isFinite(db)) {
+                        const y = db * fftView.scaleY + fftView.offsetY;
+                        if (firstPoint) {
+                            ctx.moveTo(x, y);
+                            firstPoint = false;
+                        } else {
+                            ctx.lineTo(x, y);
+                        }
+                    }
+                }
             }
             ctx.stroke();
         }
