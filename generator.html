@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generator Sygnałów</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .header {
+            flex-shrink: 0;
+            padding: 10px 20px;
+            background-color: #2a2a2a;
+            text-align: center;
+            border-bottom: 1px solid #444;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .main-controls-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            align-items: flex-start;
+            width: 100%;
+            padding: 10px 0;
+        }
+        .control-section {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+            border: 1px solid #444;
+            padding: 10px 15px;
+            border-radius: 8px;
+            background-color: #333;
+        }
+        .section-title {
+            font-weight: bold;
+            color: #00aaff;
+            margin-bottom: 5px;
+            font-size: 1em;
+            width: 100%;
+            text-align: center;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+        h1 {
+            margin: 0 0 5px 0;
+            color: #ffffff;
+            font-size: 1.5em;
+        }
+        .btn, a.btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-family: inherit;
+            transition: background-color 0.3s;
+            width: 100%;
+            box-sizing: border-box;
+            text-decoration: none;
+        }
+        .btn:hover, a.btn:hover {
+            background-color: #0056b3;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            width: 100%;
+            align-items: flex-start;
+        }
+        .control-group label {
+            font-size: 0.9em;
+            color: #ccc;
+        }
+        .control-group input, .control-group select {
+            width: 100%;
+            background-color: #222;
+            color: #eee;
+            border: 1px solid #555;
+            border-radius: 3px;
+            padding: 6px;
+            box-sizing: border-box;
+            font-family: inherit;
+            font-size: 0.9em;
+        }
+        #status {
+            font-size: 0.9em;
+            color: #bbb;
+            min-height: 1.1em;
+            width: 100%;
+        }
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+            min-height: 0;
+        }
+        canvas {
+            display: block;
+            background-color: #222;
+            border-radius: 4px;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Generator Sygnałów</h1>
+        <div class="main-controls-container">
+            <div class="control-section">
+                <span class="section-title">Parametry Sygnału</span>
+                <div class="control-group">
+                    <label for="wave-type">Kształt fali:</label>
+                    <select id="wave-type">
+                        <option value="sine">Sinus</option>
+                        <option value="square">Prostokąt</option>
+                        <option value="triangle">Trójkąt</option>
+                        <option value="sawtooth">Piłokształtny</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="amplitude">Amplituda (V):</label>
+                    <input type="number" id="amplitude" value="1" step="0.1">
+                </div>
+                <div class="control-group">
+                    <label for="frequency">Częstotliwość (Hz):</label>
+                    <input type="number" id="frequency" value="1000">
+                </div>
+                <div class="control-group">
+                    <label for="sample-rate">Próbkowanie (Hz):</label>
+                    <input type="number" id="sample-rate" value="100000">
+                </div>
+                <div class="control-group">
+                    <label for="duration">Czas trwania (s):</label>
+                    <input type="number" id="duration" value="0.01" step="0.001">
+                </div>
+            </div>
+            <div class="control-section">
+                <span class="section-title">Akcje</span>
+                <button id="generate-btn" class="btn">Generuj i Wyświetl</button>
+                <button id="save-btn" class="btn" disabled>Zapisz do CSV</button>
+                <a href="index.html" class="btn">Przejdź do Oscyloskopu</a>
+            </div>
+        </div>
+        <div id="status">Ustaw parametry i wygeneruj sygnał.</div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="plot-canvas"></canvas>
+    </div>
+
+    <script>
+        // --- Elementy DOM ---
+        const waveTypeSelect = document.getElementById('wave-type');
+        const amplitudeInput = document.getElementById('amplitude');
+        const frequencyInput = document.getElementById('frequency');
+        const sampleRateInput = document.getElementById('sample-rate');
+        const durationInput = document.getElementById('duration');
+        const generateBtn = document.getElementById('generate-btn');
+        const saveBtn = document.getElementById('save-btn');
+        const statusDiv = document.getElementById('status');
+        const canvas = document.getElementById('plot-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Globalne zmienne ---
+        let generatedData = [];
+        let generatedIncrement = 0;
+        const padding = { top: 20, right: 20, bottom: 40, left: 60 };
+
+        // --- Inicjalizacja ---
+        function init() {
+            setupCanvas();
+            generateBtn.addEventListener('click', generateSignal);
+            saveBtn.addEventListener('click', saveToCSV);
+            window.addEventListener('resize', setupCanvas);
+        }
+
+        function setupCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            draw();
+        }
+
+        // --- Logika Generatora ---
+        function generateSignal() {
+            statusDiv.textContent = '⚙️ Generowanie sygnału...';
+            try {
+                const waveType = waveTypeSelect.value;
+                const amp = parseFloat(amplitudeInput.value);
+                const freq = parseFloat(frequencyInput.value);
+                const sampleRate = parseFloat(sampleRateInput.value);
+                const duration = parseFloat(durationInput.value);
+
+                if (isNaN(amp) || isNaN(freq) || isNaN(sampleRate) || isNaN(duration)) {
+                    throw new Error("Wszystkie parametry muszą być liczbami.");
+                }
+                if (sampleRate <= 0 || duration <= 0 || freq <= 0) {
+                    throw new Error("Częstotliwość, próbkowanie i czas trwania muszą być dodatnie.");
+                }
+
+                const numSamples = Math.floor(duration * sampleRate);
+                generatedIncrement = 1 / sampleRate;
+                generatedData = new Float32Array(numSamples);
+
+                for (let i = 0; i < numSamples; i++) {
+                    const t = i * generatedIncrement;
+                    switch (waveType) {
+                        case 'sine':
+                            generatedData[i] = amp * Math.sin(2 * Math.PI * freq * t);
+                            break;
+                        case 'square':
+                            generatedData[i] = amp * Math.sign(Math.sin(2 * Math.PI * freq * t));
+                            break;
+                        case 'triangle':
+                            generatedData[i] = amp * (2 / Math.PI) * Math.asin(Math.sin(2 * Math.PI * freq * t));
+                            break;
+                        case 'sawtooth':
+                            generatedData[i] = amp * (2 * (t * freq - Math.floor(0.5 + t * freq)));
+                            break;
+                    }
+                }
+                
+                saveBtn.disabled = false;
+                
+                let statusMessage = `✅ Wygenerowano sygnał. Liczba próbek: ${numSamples.toLocaleString('pl-PL')}.`;
+                if (sampleRate < 2 * freq) {
+                    statusMessage += ` ⚠️ Niskie próbkowanie!`;
+                }
+                statusDiv.textContent = statusMessage;
+
+                draw();
+
+            } catch (error) {
+                statusDiv.textContent = `❌ Błąd: ${error.message}`;
+                saveBtn.disabled = true;
+            }
+        }
+
+        function saveToCSV() {
+            if (generatedData.length === 0) {
+                statusDiv.textContent = '❌ Brak danych do zapisania.';
+                return;
+            }
+
+            const startTime = 0;
+            const header = "CH1;Start;Increment;";
+            const meta = `Volt;${startTime.toExponential(6).replace('.', ',')};${generatedIncrement.toExponential(6).replace('.', ',')}`;
+
+            let csvContent = `${header}\n${meta}\n`;
+
+            generatedData.forEach(value => {
+                csvContent += `${value.toExponential(2).replace('.', ',')};\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            const fileName = `${waveTypeSelect.value}_${frequencyInput.value}Hz.csv`;
+            link.setAttribute("download", fileName);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            statusDiv.textContent = `✅ Plik ${fileName} został zapisany.`;
+        }
+
+        // --- Logika Rysowania ---
+        function draw() {
+            const { width, height } = canvas.getBoundingClientRect();
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
+            if (generatedData.length === 0) {
+                ctx.fillStyle = "#666";
+                ctx.textAlign = "center";
+                ctx.font = "16px Arial";
+                ctx.fillText("Brak sygnału do wyświetlenia.", width / 2, height / 2);
+                return;
+            }
+
+            const { chartWidth, chartHeight } = getChartDimensions();
+            
+            ctx.save();
+            ctx.translate(padding.left, padding.top);
+            
+            // Rysowanie siatki i osi
+            drawGrid(chartWidth, chartHeight);
+
+            // Rysowanie przebiegu
+            ctx.beginPath();
+            ctx.rect(0, 0, chartWidth, chartHeight);
+            ctx.clip();
+            drawWaveform(chartWidth, chartHeight);
+            
+            ctx.restore();
+        }
+
+        function getChartDimensions() {
+            const { width, height } = canvas.getBoundingClientRect();
+            return {
+                chartWidth: width - padding.left - padding.right,
+                chartHeight: height - padding.top - padding.bottom
+            };
+        }
+
+        function drawGrid(width, height) {
+            const amp = parseFloat(amplitudeInput.value) || 1;
+            const duration = parseFloat(durationInput.value) || 1;
+
+            ctx.save();
+            ctx.font = "10px Arial";
+            ctx.fillStyle = "#888";
+
+            // Oś Y (Napięcie)
+            ctx.textAlign = "right";
+            const numYLines = 5;
+            for (let i = -numYLines; i <= numYLines; i++) {
+                const v = (i / numYLines) * amp;
+                const y = height / 2 - (v / amp) * (height / 2);
+                const isZeroAxis = i === 0;
+                ctx.strokeStyle = isZeroAxis ? '#00aaff' : '#444';
+                ctx.lineWidth = isZeroAxis ? 1 : 0.5;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+                if (!isZeroAxis) {
+                    ctx.fillText(v.toFixed(2), -8, y + 3);
+                }
+            }
+
+            // Oś X (Czas)
+            ctx.textAlign = "center";
+            const numXLines = 10;
+            for (let i = 0; i <= numXLines; i++) {
+                const t = (i / numXLines) * duration;
+                const x = (t / duration) * width;
+                 const isZeroAxis = i === 0;
+                ctx.strokeStyle = isZeroAxis ? '#00aaff' : '#444';
+                ctx.lineWidth = isZeroAxis ? 1 : 0.5;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+                 if (!isZeroAxis) {
+                    ctx.fillText((t * 1000).toFixed(1) + 'ms', x, height + 15);
+                }
+            }
+            
+            // Tytuły osi
+            ctx.fillText("Czas [ms]", width / 2, height + 30);
+            ctx.save();
+            ctx.translate(-45, height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText("Napięcie [V]", 0, 0);
+            ctx.restore();
+
+            ctx.restore();
+        }
+
+        function drawWaveform(width, height) {
+            const amp = parseFloat(amplitudeInput.value) || 1;
+            
+            ctx.strokeStyle = '#33ff99';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+
+            for (let i = 0; i < generatedData.length; i++) {
+                const x = (i / generatedData.length) * width;
+                const y = height / 2 - (generatedData[i] / amp) * (height / 2);
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.stroke();
+        }
+
+        init();
+    </script>
+</body>
+</html>
+</html>
