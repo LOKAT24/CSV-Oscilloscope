@@ -26,6 +26,7 @@
             flex-direction: column;
             align-items: center;
             gap: 10px;
+            position: relative;
         }
         .main-controls-container {
             display: flex;
@@ -61,7 +62,7 @@
             color: #ffffff;
             font-size: 1.5em;
         }
-        .btn {
+        .btn, a.btn {
             display: flex;
             align-items: center;
             justify-content: center;
@@ -77,6 +78,7 @@
             transition: background-color 0.3s;
             width: 100%;
             box-sizing: border-box;
+            text-decoration: none;
         }
         .btn svg {
             width: 16px;
@@ -90,7 +92,7 @@
         .btn.active {
             background-color: #0056b3;
         }
-        .btn:hover {
+        .btn:hover, a.btn:hover {
             background-color: #0056b3;
         }
         #file-input {
@@ -226,11 +228,25 @@
             line-height: 18px;
             font-size: 14px;
         }
+        .top-right-nav {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            z-index: 10;
+        }
+        .top-right-nav .btn {
+            padding: 6px 12px;
+            font-size: 0.85em;
+            background-color: #3a3a3a;
+        }
     </style>
 </head>
 <body>
 
     <div class="header">
+        <div class="top-right-nav">
+            <a href="generator.html" class="btn">Generator Sygnału</a>
+        </div>
         <h1>Wizualizator Przebiegów CSV</h1>
         <div class="main-controls-container">
             <div class="control-section">
@@ -245,7 +261,6 @@
                     <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.2-3.2l-4.2 4.2A4 4 0 1 0 11 18.9V22h-1a10 10 0 0 1-8-10.5z"></path></svg>
                     <span>Resetuj Widok</span>
                 </button>
-                 <a href="generator.html" class="btn" style="margin-top: 10px;">Generator Sygnału</a>
             </div>
             <div class="control-section">
                 <span class="section-title">Tryb Wyświetlania</span>

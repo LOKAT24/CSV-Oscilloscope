@@ -26,6 +26,7 @@
             flex-direction: column;
             align-items: center;
             gap: 10px;
+            position: relative;
         }
         .main-controls-container {
             display: flex;
@@ -82,6 +83,10 @@
         .btn:hover, a.btn:hover {
             background-color: #0056b3;
         }
+        .btn:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
         .control-group {
             display: flex;
             flex-direction: column;
@@ -122,11 +127,25 @@
             width: 100%;
             height: 100%;
         }
+        .top-right-nav {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            z-index: 10;
+        }
+        .top-right-nav .btn {
+            padding: 6px 12px;
+            font-size: 0.85em;
+            background-color: #3a3a3a;
+        }
     </style>
 </head>
 <body>
 
     <div class="header">
+        <div class="top-right-nav">
+            <a href="index.html" class="btn">Przejdź do Oscyloskopu</a>
+        </div>
         <h1>Generator Sygnałów</h1>
         <div class="main-controls-container">
             <div class="control-section">
@@ -138,7 +157,13 @@
                         <option value="square">Prostokąt</option>
                         <option value="triangle">Trójkąt</option>
                         <option value="sawtooth">Piłokształtny</option>
+                        <option value="noise">Szum</option>
+                        <option value="spikes">Piki</option>
                     </select>
+                </div>
+                 <div class="control-group" id="spikes-density-control" style="display: none;">
+                    <label for="spike-density">Gęstość pików (%):</label>
+                    <input type="number" id="spike-density" value="1" step="0.1" min="0">
                 </div>
                 <div class="control-group">
                     <label for="amplitude">Amplituda (V):</label>
@@ -159,9 +184,11 @@
             </div>
             <div class="control-section">
                 <span class="section-title">Akcje</span>
-                <button id="generate-btn" class="btn">Generuj i Wyświetl</button>
+                <button id="generate-btn" class="btn">Generuj (Zastąp)</button>
+                <button id="add-btn" class="btn" disabled>Dodaj Sygnał</button>
+                <button id="reset-btn" class="btn" disabled>Resetuj</button>
                 <button id="save-btn" class="btn" disabled>Zapisz do CSV</button>
-                <a href="index.html" class="btn">Przejdź do Oscyloskopu</a>
+                
             </div>
         </div>
         <div id="status">Ustaw parametry i wygeneruj sygnał.</div>
@@ -178,7 +205,11 @@
         const frequencyInput = document.getElementById('frequency');
         const sampleRateInput = document.getElementById('sample-rate');
         const durationInput = document.getElementById('duration');
+        const spikeDensityControl = document.getElementById('spikes-density-control');
+        const spikeDensityInput = document.getElementById('spike-density');
         const generateBtn = document.getElementById('generate-btn');
+        const addBtn = document.getElementById('add-btn');
+        const resetBtn = document.getElementById('reset-btn');
         const saveBtn = document.getElementById('save-btn');
         const statusDiv = document.getElementById('status');
         const canvas = document.getElementById('plot-canvas');
@@ -187,14 +218,19 @@
         // --- Globalne zmienne ---
         let generatedData = [];
         let generatedIncrement = 0;
+        let viewYRange = { min: -1, max: 1 };
         const padding = { top: 20, right: 20, bottom: 40, left: 60 };
 
         // --- Inicjalizacja ---
         function init() {
             setupCanvas();
-            generateBtn.addEventListener('click', generateSignal);
+            generateBtn.addEventListener('click', () => generateSignal(false));
+            addBtn.addEventListener('click', () => generateSignal(true));
+            resetBtn.addEventListener('click', resetGenerator);
             saveBtn.addEventListener('click', saveToCSV);
+            waveTypeSelect.addEventListener('change', updateControlsVisibility);
             window.addEventListener('resize', setupCanvas);
+            updateControlsVisibility();
         }
 
         function setupCanvas() {
@@ -205,9 +241,34 @@
             ctx.scale(dpr, dpr);
             draw();
         }
+        
+        function updateControlsVisibility() {
+            const waveType = waveTypeSelect.value;
+            spikeDensityControl.style.display = waveType === 'spikes' ? 'block' : 'none';
+            frequencyInput.disabled = waveType === 'noise' || waveType === 'spikes';
+        }
+
+        function updateUIState() {
+            const hasData = generatedData.length > 0;
+            saveBtn.disabled = !hasData;
+            addBtn.disabled = !hasData;
+            resetBtn.disabled = !hasData;
+            durationInput.disabled = hasData;
+            sampleRateInput.disabled = hasData;
+        }
+        
+        function resetGenerator() {
+            generatedData = [];
+            statusDiv.textContent = 'Ustaw parametry i wygeneruj sygnał.';
+            durationInput.disabled = false;
+            sampleRateInput.disabled = false;
+            updateUIState();
+            updateYAxisRange();
+            draw();
+        }
 
         // --- Logika Generatora ---
-        function generateSignal() {
+        function generateSignal(add = false) {
             statusDiv.textContent = '⚙️ Generowanie sygnału...';
             try {
                 const waveType = waveTypeSelect.value;
@@ -215,50 +276,92 @@
                 const freq = parseFloat(frequencyInput.value);
                 const sampleRate = parseFloat(sampleRateInput.value);
                 const duration = parseFloat(durationInput.value);
+                const spikeDensity = parseFloat(spikeDensityInput.value);
 
-                if (isNaN(amp) || isNaN(freq) || isNaN(sampleRate) || isNaN(duration)) {
-                    throw new Error("Wszystkie parametry muszą być liczbami.");
+                if (isNaN(amp) || isNaN(freq) || isNaN(sampleRate) || isNaN(duration) || isNaN(spikeDensity)) {
+                    throw new Error("Wszystkie parametry muszą być prawidłowymi liczbami.");
                 }
-                if (sampleRate <= 0 || duration <= 0 || freq <= 0) {
-                    throw new Error("Częstotliwość, próbkowanie i czas trwania muszą być dodatnie.");
+                if (sampleRate <= 0 || duration <= 0) {
+                    throw new Error("Próbkowanie i czas trwania muszą być dodatnie.");
+                }
+                if (freq <= 0 && (waveType !== 'noise' && waveType !== 'spikes')) {
+                     throw new Error("Częstotliwość musi być dodatnia dla tego typu sygnału.");
                 }
 
                 const numSamples = Math.floor(duration * sampleRate);
-                generatedIncrement = 1 / sampleRate;
-                generatedData = new Float32Array(numSamples);
+                const increment = 1 / sampleRate;
+                
+                if (add && generatedData.length !== numSamples) {
+                    throw new Error("Aby dodać sygnał, parametry (czas, próbkowanie) muszą być takie same jak w sygnale bazowym.");
+                }
 
+                const newData = new Float32Array(numSamples);
                 for (let i = 0; i < numSamples; i++) {
-                    const t = i * generatedIncrement;
+                    const t = i * increment;
                     switch (waveType) {
                         case 'sine':
-                            generatedData[i] = amp * Math.sin(2 * Math.PI * freq * t);
+                            newData[i] = amp * Math.sin(2 * Math.PI * freq * t);
                             break;
                         case 'square':
-                            generatedData[i] = amp * Math.sign(Math.sin(2 * Math.PI * freq * t));
+                            newData[i] = amp * Math.sign(Math.sin(2 * Math.PI * freq * t));
                             break;
                         case 'triangle':
-                            generatedData[i] = amp * (2 / Math.PI) * Math.asin(Math.sin(2 * Math.PI * freq * t));
+                            newData[i] = amp * (2 / Math.PI) * Math.asin(Math.sin(2 * Math.PI * freq * t));
                             break;
                         case 'sawtooth':
-                            generatedData[i] = amp * (2 * (t * freq - Math.floor(0.5 + t * freq)));
+                            newData[i] = amp * (2 * (t * freq - Math.floor(0.5 + t * freq)));
+                            break;
+                        case 'noise':
+                            newData[i] = amp * (2 * Math.random() - 1);
+                            break;
+                        case 'spikes':
+                            newData[i] = (Math.random() < (spikeDensity / 100)) ? amp * (Math.random() > 0.5 ? 1 : -1) : 0;
                             break;
                     }
                 }
                 
-                saveBtn.disabled = false;
-                
-                let statusMessage = `✅ Wygenerowano sygnał. Liczba próbek: ${numSamples.toLocaleString('pl-PL')}.`;
-                if (sampleRate < 2 * freq) {
-                    statusMessage += ` ⚠️ Niskie próbkowanie!`;
+                if (add) {
+                    for(let i = 0; i < numSamples; i++) {
+                        generatedData[i] += newData[i];
+                    }
+                    statusDiv.textContent = `✅ Sygnał dodany. Całkowita liczba próbek: ${numSamples.toLocaleString('pl-PL')}.`;
+                } else {
+                    generatedData = newData;
+                    generatedIncrement = increment;
+                    let statusMessage = `✅ Wygenerowano sygnał. Liczba próbek: ${numSamples.toLocaleString('pl-PL')}.`;
+                    if (sampleRate < 2 * freq && (waveType !== 'noise' && waveType !== 'spikes')) {
+                        statusMessage += ` ⚠️ Niskie próbkowanie!`;
+                    }
+                    statusDiv.textContent = statusMessage;
                 }
-                statusDiv.textContent = statusMessage;
-
+                
+                updateYAxisRange();
+                updateUIState();
                 draw();
 
             } catch (error) {
                 statusDiv.textContent = `❌ Błąd: ${error.message}`;
-                saveBtn.disabled = true;
             }
+        }
+        
+        function updateYAxisRange() {
+            if (generatedData.length === 0) {
+                viewYRange = { min: -1, max: 1 };
+                return;
+            }
+            let min = generatedData[0];
+            let max = generatedData[0];
+            for(const v of generatedData) {
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+            if (min === max) {
+                min -= 1;
+                max += 1;
+            }
+            const padding = Math.abs(max - min) * 0.1;
+            viewYRange.min = min - padding;
+            viewYRange.max = max + padding;
         }
 
         function saveToCSV() {
@@ -266,28 +369,48 @@
                 statusDiv.textContent = '❌ Brak danych do zapisania.';
                 return;
             }
+            try {
+                const startTime = 0;
+                const header = "CH1;Start;Increment;";
+                const meta = `Volt;${startTime.toExponential(6).replace('.', ',')};${generatedIncrement.toExponential(6).replace('.', ',')}`;
 
-            const startTime = 0;
-            const header = "CH1;Start;Increment;";
-            const meta = `Volt;${startTime.toExponential(6).replace('.', ',')};${generatedIncrement.toExponential(6).replace('.', ',')}`;
+                let csvContent = `${header}
+${meta}
+`;
 
-            let csvContent = `${header}\n${meta}\n`;
+                generatedData.forEach(value => {
+                    csvContent += `${value.toExponential(2).replace('.', ',')};
+`;
+                });
 
-            generatedData.forEach(value => {
-                csvContent += `${value.toExponential(2).replace('.', ',')};\n`;
-            });
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                
+                link.href = url;
 
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            const fileName = `${waveTypeSelect.value}_${frequencyInput.value}Hz.csv`;
-            link.setAttribute("download", fileName);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            statusDiv.textContent = `✅ Plik ${fileName} został zapisany.`;
+                const waveType = waveTypeSelect.value;
+                let fileName = 'sygnal.csv';
+                if (waveType === 'noise' || waveType === 'spikes') {
+                    fileName = `${waveType}_${amplitudeInput.value}V.csv`;
+                } else {
+                    fileName = `${waveType}_${frequencyInput.value}Hz.csv`;
+                }
+                link.download = fileName;
+
+                document.body.appendChild(link);
+                link.click();
+                
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                }, 100);
+                
+                statusDiv.textContent = `✅ Plik ${fileName} został zapisany.`;
+            } catch (error) {
+                console.error("Błąd podczas zapisywania pliku:", error);
+                statusDiv.textContent = `❌ Wystąpił błąd podczas zapisu.`;
+            }
         }
 
         // --- Logika Rysowania ---
@@ -311,10 +434,8 @@
             ctx.save();
             ctx.translate(padding.left, padding.top);
             
-            // Rysowanie siatki i osi
             drawGrid(chartWidth, chartHeight);
 
-            // Rysowanie przebiegu
             ctx.beginPath();
             ctx.rect(0, 0, chartWidth, chartHeight);
             ctx.clip();
@@ -332,8 +453,8 @@
         }
 
         function drawGrid(width, height) {
-            const amp = parseFloat(amplitudeInput.value) || 1;
-            const duration = parseFloat(durationInput.value) || 1;
+            const duration = generatedData.length * generatedIncrement;
+            const yRange = viewYRange.max - viewYRange.min;
 
             ctx.save();
             ctx.font = "10px Arial";
@@ -342,28 +463,44 @@
             // Oś Y (Napięcie)
             ctx.textAlign = "right";
             const numYLines = 5;
-            for (let i = -numYLines; i <= numYLines; i++) {
-                const v = (i / numYLines) * amp;
-                const y = height / 2 - (v / amp) * (height / 2);
-                const isZeroAxis = i === 0;
-                ctx.strokeStyle = isZeroAxis ? '#00aaff' : '#444';
-                ctx.lineWidth = isZeroAxis ? 1 : 0.5;
+            for (let i = 0; i <= numYLines; i++) {
+                const v = viewYRange.min + (i / numYLines) * yRange;
+                const y = height - (i / numYLines) * height;
+                
+                const isZeroAxis = Math.abs(v) < 1e-9 || (v > 0 && viewYRange.min > 0) || (v < 0 && viewYRange.max < 0);
+                if (viewYRange.min <= 0 && viewYRange.max >= 0 && Math.abs(v) > 1e-9) {
+                     // Draw normal grid line
+                } else if (viewYRange.min > 0 || viewYRange.max < 0) {
+                    // Don't draw zero axis if it's not in range
+                }
+
+                ctx.strokeStyle = '#444';
+                ctx.lineWidth = 0.5;
                 ctx.beginPath();
                 ctx.moveTo(0, y);
                 ctx.lineTo(width, y);
                 ctx.stroke();
-                if (!isZeroAxis) {
-                    ctx.fillText(v.toFixed(2), -8, y + 3);
-                }
+                ctx.fillText(v.toFixed(2), -8, y + 3);
             }
+            // Draw zero line separately if in view
+            if (viewYRange.min <= 0 && viewYRange.max >= 0) {
+                const y0 = height * (viewYRange.max / yRange);
+                ctx.strokeStyle = '#00aaff';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, y0);
+                ctx.lineTo(width, y0);
+                ctx.stroke();
+            }
+
 
             // Oś X (Czas)
             ctx.textAlign = "center";
             const numXLines = 10;
             for (let i = 0; i <= numXLines; i++) {
                 const t = (i / numXLines) * duration;
-                const x = (t / duration) * width;
-                 const isZeroAxis = i === 0;
+                const x = (i / numXLines) * width;
+                const isZeroAxis = i === 0;
                 ctx.strokeStyle = isZeroAxis ? '#00aaff' : '#444';
                 ctx.lineWidth = isZeroAxis ? 1 : 0.5;
                 ctx.beginPath();
@@ -371,7 +508,7 @@
                 ctx.lineTo(x, height);
                 ctx.stroke();
                  if (!isZeroAxis) {
-                    ctx.fillText((t * 1000).toFixed(1) + 'ms', x, height + 15);
+                    ctx.fillText((t * 1000).toFixed(1), x, height + 15);
                 }
             }
             
@@ -387,15 +524,16 @@
         }
 
         function drawWaveform(width, height) {
-            const amp = parseFloat(amplitudeInput.value) || 1;
-            
+            const yRange = viewYRange.max - viewYRange.min;
+            if (yRange === 0) return;
+
             ctx.strokeStyle = '#33ff99';
             ctx.lineWidth = 1.5;
             ctx.beginPath();
 
             for (let i = 0; i < generatedData.length; i++) {
-                const x = (i / generatedData.length) * width;
-                const y = height / 2 - (generatedData[i] / amp) * (height / 2);
+                const x = (i / (generatedData.length -1)) * width;
+                const y = height - ((generatedData[i] - viewYRange.min) / yRange) * height;
                 if (i === 0) {
                     ctx.moveTo(x, y);
                 } else {
@@ -408,5 +546,4 @@
         init();
     </script>
 </body>
-</html>
 </html>
