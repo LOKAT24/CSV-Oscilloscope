@@ -3,67 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generator Sygnałów</title>
+    <title>Kompozytor Sygnałów</title>
     <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --side-panel-bg: #2a2a2a;
+            --surface-darker-color: #222;
+            --primary-color: #00aaff;
+            --text-color: #e0e0e0;
+            --text-muted-color: #ccc;
+            --border-color: #444;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 0;
             padding: 0;
-            background-color: #1a1a1a;
-            color: #e0e0e0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
             display: flex;
-            flex-direction: column;
             height: 100vh;
             overflow: hidden;
         }
-        .header {
-            flex-shrink: 0;
-            padding: 10px 20px;
-            background-color: #2a2a2a;
-            text-align: center;
-            border-bottom: 1px solid #444;
+        #side-panel {
+            width: 350px;
+            min-width: 320px;
+            background-color: var(--side-panel-bg);
             display: flex;
             flex-direction: column;
-            align-items: center;
-            gap: 10px;
+            padding: 15px;
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+        }
+        #main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            overflow: hidden;
             position: relative;
         }
-        .main-controls-container {
+        #chart-toolbar {
             display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            justify-content: center;
-            align-items: flex-start;
+            gap: 10px;
+            padding-bottom: 10px;
+            align-items: center;
+        }
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+            min-height: 0;
+        }
+        canvas {
+            display: block;
+            background-color: var(--surface-darker-color);
+            border-radius: 4px;
             width: 100%;
-            padding: 10px 0;
+            height: 100%;
+            cursor: grab;
+        }
+        canvas:active { cursor: grabbing; }
+        h1 {
+            margin: 0 0 15px 0;
+            color: #ffffff;
+            font-size: 1.4em;
+            text-align: center;
         }
         .control-section {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            align-items: center;
-            border: 1px solid #444;
+            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
             padding: 10px 15px;
             border-radius: 8px;
             background-color: #333;
         }
         .section-title {
             font-weight: bold;
-            color: #00aaff;
-            margin-bottom: 5px;
+            color: var(--primary-color);
+            margin: -10px -15px 10px;
+            padding: 8px 15px;
             font-size: 1em;
-            width: 100%;
             text-align: center;
-            border-bottom: 1px solid #444;
-            padding-bottom: 5px;
-        }
-        h1 {
-            margin: 0 0 5px 0;
-            color: #ffffff;
-            font-size: 1.5em;
+            border-bottom: 1px solid var(--border-color);
+            background-color: #3a3a3a;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
         }
         .btn, a.btn {
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
@@ -76,31 +101,25 @@
             font-size: 0.9em;
             font-family: inherit;
             transition: background-color 0.3s;
-            width: 100%;
-            box-sizing: border-box;
             text-decoration: none;
+            box-sizing: border-box;
         }
-        .btn:hover, a.btn:hover {
-            background-color: #0056b3;
-        }
-        .btn:disabled {
-            background-color: #555;
-            cursor: not-allowed;
-        }
+        .btn.full-width { width: 100%; }
+        .btn:hover, a.btn:hover { background-color: #0056b3; }
+        .btn:disabled { background-color: #555; cursor: not-allowed; }
+        .btn.danger { background-color: #dc3545; }
+        .btn.danger:hover { background-color: #c82333; }
+
         .control-group {
             display: flex;
             flex-direction: column;
             gap: 5px;
-            width: 100%;
-            align-items: flex-start;
+            margin-bottom: 10px;
         }
-        .control-group label {
-            font-size: 0.9em;
-            color: #ccc;
-        }
+        .control-group:last-child { margin-bottom: 0; }
+        .control-group label { font-size: 0.9em; color: var(--text-muted-color); }
         .control-group input, .control-group select {
-            width: 100%;
-            background-color: #222;
+            background-color: var(--surface-darker-color);
             color: #eee;
             border: 1px solid #555;
             border-radius: 3px;
@@ -108,129 +127,219 @@
             box-sizing: border-box;
             font-family: inherit;
             font-size: 0.9em;
+            width: 100%;
         }
-        #status {
+        .input-with-unit { display: flex; gap: 5px; }
+        .input-with-unit input { flex-grow: 1; }
+        .input-with-unit select { width: 80px; flex-shrink: 0; }
+        
+        .horizontal-controls {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .horizontal-controls .control-group {
+            flex: 1;
+        }
+
+        #global-status {
             font-size: 0.9em;
             color: #bbb;
             min-height: 1.1em;
-            width: 100%;
+            text-align: center;
+            padding-top: 10px;
         }
-        #canvas-container {
-            flex-grow: 1;
+        .top-right-nav { position: absolute; top: 15px; right: 15px; z-index: 10; }
+        .top-right-nav .btn { padding: 6px 12px; font-size: 0.85em; background-color: #3a3a3a; }
+
+        #components-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .component-tile {
             position: relative;
-            min-height: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 10px;
+            background: #383838;
+            border-radius: 6px;
+            border: 1px solid #555;
         }
-        canvas {
-            display: block;
-            background-color: #222;
-            border-radius: 4px;
-            width: 100%;
-            height: 100%;
-        }
-        .top-right-nav {
+        .component-tile .control-group { flex: 1 1 100px; margin-bottom: 0; }
+        .remove-btn {
             position: absolute;
-            top: 15px;
-            right: 20px;
-            z-index: 10;
+            top: -5px;
+            right: -5px;
+            width: 20px;
+            height: 20px;
+            background-color: #555;
+            color: #fff;
+            border: 1px solid #888;
+            border-radius: 50%;
+            cursor: pointer;
+            text-align: center;
+            line-height: 18px;
+            font-size: 14px;
+            font-weight: bold;
         }
-        .top-right-nav .btn {
-            padding: 6px 12px;
-            font-size: 0.85em;
-            background-color: #3a3a3a;
+        .remove-btn:hover { background-color: #dc3545; }
+        #add-component-btn { margin-top: 15px; }
+        #tooltip-panel {
+            position: fixed;
+            display: none;
+            background-color: rgba(40, 40, 40, 0.8);
+            border: 1px solid #666;
+            border-radius: 5px;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-family: monospace;
+            color: #eee;
+            pointer-events: none;
+            z-index: 100;
         }
     </style>
 </head>
 <body>
 
-    <div class="header">
+    <div id="side-panel">
+        <h1>Kompozytor Sygnałów</h1>
+
+        <div class="control-section">
+            <h2 class="section-title">Parametry Globalne</h2>
+            <div class="horizontal-controls">
+                <div class="control-group">
+                    <label for="sample-rate">Próbkowanie:</label>
+                    <div class="input-with-unit">
+                        <input type="number" id="sample-rate" value="100">
+                        <select id="sample-rate-unit">
+                            <option value="1">Hz</option>
+                            <option value="1000" selected>kHz</option>
+                            <option value="1000000">MHz</option>
+                            <option value="1000000000">GHz</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label for="duration">Czas trwania:</label>
+                     <div class="input-with-unit">
+                        <input type="number" id="duration" value="10" step="0.001">
+                        <select id="duration-unit">
+                            <option value="1">s</option>
+                            <option value="0.001" selected>ms</option>
+                            <option value="0.000001">µs</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div id="global-status"></div>
+        </div>
+
+        <div class="control-section">
+            <h2 class="section-title">Akcje</h2>
+            <button id="reset-btn" class="btn danger full-width" disabled>Resetuj Kompozycję</button>
+            <button id="save-btn" class="btn full-width" disabled>Zapisz do CSV</button>
+        </div>
+
+        <div id="components-container"></div>
+        <button id="add-component-btn" class="btn full-width">Dodaj Komponent</button>
+    </div>
+
+    <div id="main-content">
         <div class="top-right-nav">
             <a href="index.html" class="btn">Przejdź do Oscyloskopu</a>
         </div>
-        <h1>Generator Sygnałów</h1>
-        <div class="main-controls-container">
-            <div class="control-section">
-                <span class="section-title">Parametry Sygnału</span>
-                <div class="control-group">
-                    <label for="wave-type">Kształt fali:</label>
-                    <select id="wave-type">
-                        <option value="sine">Sinus</option>
-                        <option value="square">Prostokąt</option>
-                        <option value="triangle">Trójkąt</option>
-                        <option value="sawtooth">Piłokształtny</option>
-                        <option value="noise">Szum</option>
-                        <option value="spikes">Piki</option>
-                    </select>
-                </div>
-                 <div class="control-group" id="spikes-density-control" style="display: none;">
-                    <label for="spike-density">Gęstość pików (%):</label>
-                    <input type="number" id="spike-density" value="1" step="0.1" min="0">
-                </div>
-                <div class="control-group">
-                    <label for="amplitude">Amplituda (V):</label>
-                    <input type="number" id="amplitude" value="1" step="0.1">
-                </div>
-                <div class="control-group">
-                    <label for="frequency">Częstotliwość (Hz):</label>
-                    <input type="number" id="frequency" value="1000">
-                </div>
-                <div class="control-group">
-                    <label for="sample-rate">Próbkowanie (Hz):</label>
-                    <input type="number" id="sample-rate" value="100000">
-                </div>
-                <div class="control-group">
-                    <label for="duration">Czas trwania (s):</label>
-                    <input type="number" id="duration" value="0.01" step="0.001">
-                </div>
-            </div>
-            <div class="control-section">
-                <span class="section-title">Akcje</span>
-                <button id="generate-btn" class="btn">Generuj (Zastąp)</button>
-                <button id="add-btn" class="btn" disabled>Dodaj Sygnał</button>
-                <button id="reset-btn" class="btn" disabled>Resetuj</button>
-                <button id="save-btn" class="btn" disabled>Zapisz do CSV</button>
-                
-            </div>
+        <div id="chart-toolbar">
+             <button id="reset-view-btn" class="btn">Resetuj Widok</button>
         </div>
-        <div id="status">Ustaw parametry i wygeneruj sygnał.</div>
+        <div id="canvas-container">
+            <canvas id="plot-canvas"></canvas>
+            <div id="tooltip-panel"></div>
+        </div>
     </div>
 
-    <div id="canvas-container">
-        <canvas id="plot-canvas"></canvas>
-    </div>
+    <!-- Szablon komponentu -->
+    <template id="component-template">
+        <div class="component-tile">
+            <button class="remove-btn">&times;</button>
+            <div class="control-group">
+                <label>Kształt:</label>
+                <select class="wave-type">
+                    <option value="sine">Sinus</option>
+                    <option value="square">Prostokąt</option>
+                    <option value="triangle">Trójkąt</option>
+                    <option value="sawtooth">Piłokształtny</option>
+                    <option value="dc">Składowa stała</option>
+                    <option value="noise">Szum</option>
+                    <option value="spikes">Piki</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Amplituda (V):</label>
+                <input type="number" class="amplitude" value="1" step="0.1">
+            </div>
+            <div class="control-group frequency-control">
+                <label>Częstotliwość:</label>
+                <div class="input-with-unit">
+                    <input type="number" class="frequency" value="1">
+                    <select class="frequency-unit">
+                        <option value="1">Hz</option>
+                        <option value="1000" selected>kHz</option>
+                        <option value="1000000">MHz</option>
+                    </select>
+                </div>
+            </div>
+            <div class="control-group spikes-density-control" style="display: none;">
+                <label>Gęstość p. (%):</label>
+                <input type="number" class="spike-density" value="1" step="0.1" min="0">
+            </div>
+        </div>
+    </template>
 
     <script>
         // --- Elementy DOM ---
-        const waveTypeSelect = document.getElementById('wave-type');
-        const amplitudeInput = document.getElementById('amplitude');
-        const frequencyInput = document.getElementById('frequency');
         const sampleRateInput = document.getElementById('sample-rate');
+        const sampleRateUnitInput = document.getElementById('sample-rate-unit');
         const durationInput = document.getElementById('duration');
-        const spikeDensityControl = document.getElementById('spikes-density-control');
-        const spikeDensityInput = document.getElementById('spike-density');
-        const generateBtn = document.getElementById('generate-btn');
-        const addBtn = document.getElementById('add-btn');
+        const durationUnitInput = document.getElementById('duration-unit');
+        const addComponentBtn = document.getElementById('add-component-btn');
         const resetBtn = document.getElementById('reset-btn');
         const saveBtn = document.getElementById('save-btn');
-        const statusDiv = document.getElementById('status');
+        const resetViewBtn = document.getElementById('reset-view-btn');
+        const globalStatusDiv = document.getElementById('global-status');
         const canvas = document.getElementById('plot-canvas');
         const ctx = canvas.getContext('2d');
+        const componentsContainer = document.getElementById('components-container');
+        const componentTemplate = document.getElementById('component-template');
+        const tooltipPanel = document.getElementById('tooltip-panel');
 
         // --- Globalne zmienne ---
-        let generatedData = [];
-        let generatedIncrement = 0;
-        let viewYRange = { min: -1, max: 1 };
+        let finalSignalData = [];
+        let signalComponents = [];
+        let nextComponentId = 0;
         const padding = { top: 20, right: 20, bottom: 40, left: 60 };
+        const view = { scaleX: 1.0, scaleY: 1.0, offsetX: 0, offsetY: 0, panning: false, lastMouseX: 0, lastMouseY: 0 };
 
         // --- Inicjalizacja ---
         function init() {
             setupCanvas();
-            generateBtn.addEventListener('click', () => generateSignal(false));
-            addBtn.addEventListener('click', () => generateSignal(true));
+            addComponentBtn.addEventListener('click', addNewComponent);
             resetBtn.addEventListener('click', resetGenerator);
             saveBtn.addEventListener('click', saveToCSV);
-            waveTypeSelect.addEventListener('change', updateControlsVisibility);
-            window.addEventListener('resize', setupCanvas);
-            updateControlsVisibility();
+            resetViewBtn.addEventListener('click', () => { resetView(); draw(); });
+            [sampleRateInput, sampleRateUnitInput, durationInput, durationUnitInput].forEach(el => el.addEventListener('input', regenerateFinalSignal));
+            
+            canvas.addEventListener('wheel', handleZoom);
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('mouseleave', handleMouseUp);
+
+            window.addEventListener('resize', () => { setupCanvas(); resetView(); draw(); });
+            updateUIState();
+            regenerateFinalSignal();
         }
 
         function setupCanvas() {
@@ -239,178 +348,268 @@
             canvas.width = rect.width * dpr;
             canvas.height = rect.height * dpr;
             ctx.scale(dpr, dpr);
-            draw();
-        }
-        
-        function updateControlsVisibility() {
-            const waveType = waveTypeSelect.value;
-            spikeDensityControl.style.display = waveType === 'spikes' ? 'block' : 'none';
-            frequencyInput.disabled = waveType === 'noise' || waveType === 'spikes';
         }
 
         function updateUIState() {
-            const hasData = generatedData.length > 0;
-            saveBtn.disabled = !hasData;
-            addBtn.disabled = !hasData;
-            resetBtn.disabled = !hasData;
-            durationInput.disabled = hasData;
-            sampleRateInput.disabled = hasData;
+            const hasComponents = signalComponents.length > 0;
+            saveBtn.disabled = !hasComponents;
+            resetBtn.disabled = !hasComponents;
+            resetViewBtn.disabled = finalSignalData.length === 0;
+        }
+
+        function resetGenerator() {
+            signalComponents = [];
+            componentsContainer.innerHTML = '';
+            regenerateFinalSignal();
+        }
+
+        function addNewComponent() {
+            const componentId = nextComponentId++;
+            const newComponent = { id: componentId, waveType: 'sine', amplitude: 1, frequency: 1000, spikeDensity: 1 };
+            signalComponents.push(newComponent);
+
+            const tile = componentTemplate.content.cloneNode(true).firstElementChild;
+            tile.dataset.id = componentId;
+
+            const updateComponentValue = () => {
+                const freqValue = parseFloat(tile.querySelector('.frequency').value) || 0;
+                const freqMultiplier = parseFloat(tile.querySelector('.frequency-unit').value) || 1;
+                newComponent.frequency = freqValue * freqMultiplier;
+                newComponent.amplitude = parseFloat(tile.querySelector('.amplitude').value) || 0;
+                newComponent.spikeDensity = parseFloat(tile.querySelector('.spike-density').value) || 0;
+                regenerateFinalSignal();
+            };
+
+            tile.querySelector('.wave-type').addEventListener('change', (e) => {
+                newComponent.waveType = e.target.value;
+                updateComponentControls(tile, newComponent.waveType);
+                updateComponentValue();
+            });
+            
+            tile.querySelector('.remove-btn').addEventListener('click', () => removeComponent(componentId));
+            
+            tile.querySelectorAll('input, select').forEach(el => {
+                if(!el.classList.contains('wave-type') && !el.classList.contains('remove-btn')) {
+                    el.addEventListener('input', updateComponentValue);
+                }
+            });
+            
+            componentsContainer.appendChild(tile);
+            updateComponentControls(tile, newComponent.waveType);
+            updateComponentValue();
+        }
+
+        function removeComponent(id) {
+            signalComponents = signalComponents.filter(c => c.id !== id);
+            const tileToRemove = componentsContainer.querySelector(`[data-id='${id}']`);
+            if (tileToRemove) tileToRemove.remove();
+            regenerateFinalSignal();
         }
         
-        function resetGenerator() {
-            generatedData = [];
-            statusDiv.textContent = 'Ustaw parametry i wygeneruj sygnał.';
-            durationInput.disabled = false;
-            sampleRateInput.disabled = false;
-            updateUIState();
-            updateYAxisRange();
-            draw();
+        function updateComponentControls(tile, waveType) {
+            const freqControl = tile.querySelector('.frequency-control');
+            const spikeControl = tile.querySelector('.spikes-density-control');
+            freqControl.style.display = ['noise', 'spikes', 'dc'].includes(waveType) ? 'none' : 'flex';
+            spikeControl.style.display = waveType === 'spikes' ? 'flex' : 'none';
         }
 
         // --- Logika Generatora ---
-        function generateSignal(add = false) {
-            statusDiv.textContent = '⚙️ Generowanie sygnału...';
+        function regenerateFinalSignal() {
             try {
-                const waveType = waveTypeSelect.value;
-                const amp = parseFloat(amplitudeInput.value);
-                const freq = parseFloat(frequencyInput.value);
-                const sampleRate = parseFloat(sampleRateInput.value);
-                const duration = parseFloat(durationInput.value);
-                const spikeDensity = parseFloat(spikeDensityInput.value);
+                const sampleRate = (parseFloat(sampleRateInput.value) || 0) * (parseFloat(sampleRateUnitInput.value) || 0);
+                const duration = (parseFloat(durationInput.value) || 0) * (parseFloat(durationUnitInput.value) || 0);
 
-                if (isNaN(amp) || isNaN(freq) || isNaN(sampleRate) || isNaN(duration) || isNaN(spikeDensity)) {
-                    throw new Error("Wszystkie parametry muszą być prawidłowymi liczbami.");
-                }
                 if (sampleRate <= 0 || duration <= 0) {
-                    throw new Error("Próbkowanie i czas trwania muszą być dodatnie.");
-                }
-                if (freq <= 0 && (waveType !== 'noise' && waveType !== 'spikes')) {
-                     throw new Error("Częstotliwość musi być dodatnia dla tego typu sygnału.");
-                }
-
-                const numSamples = Math.floor(duration * sampleRate);
-                const increment = 1 / sampleRate;
-                
-                if (add && generatedData.length !== numSamples) {
-                    throw new Error("Aby dodać sygnał, parametry (czas, próbkowanie) muszą być takie same jak w sygnale bazowym.");
-                }
-
-                const newData = new Float32Array(numSamples);
-                for (let i = 0; i < numSamples; i++) {
-                    const t = i * increment;
-                    switch (waveType) {
-                        case 'sine':
-                            newData[i] = amp * Math.sin(2 * Math.PI * freq * t);
-                            break;
-                        case 'square':
-                            newData[i] = amp * Math.sign(Math.sin(2 * Math.PI * freq * t));
-                            break;
-                        case 'triangle':
-                            newData[i] = amp * (2 / Math.PI) * Math.asin(Math.sin(2 * Math.PI * freq * t));
-                            break;
-                        case 'sawtooth':
-                            newData[i] = amp * (2 * (t * freq - Math.floor(0.5 + t * freq)));
-                            break;
-                        case 'noise':
-                            newData[i] = amp * (2 * Math.random() - 1);
-                            break;
-                        case 'spikes':
-                            newData[i] = (Math.random() < (spikeDensity / 100)) ? amp * (Math.random() > 0.5 ? 1 : -1) : 0;
-                            break;
-                    }
-                }
-                
-                if (add) {
-                    for(let i = 0; i < numSamples; i++) {
-                        generatedData[i] += newData[i];
-                    }
-                    statusDiv.textContent = `✅ Sygnał dodany. Całkowita liczba próbek: ${numSamples.toLocaleString('pl-PL')}.`;
+                    finalSignalData = [];
+                    globalStatusDiv.textContent = signalComponents.length > 0 ? 'Próbkowanie i czas muszą być dodatnie.' : 'Dodaj komponent, aby rozpocząć.';
                 } else {
-                    generatedData = newData;
-                    generatedIncrement = increment;
-                    let statusMessage = `✅ Wygenerowano sygnał. Liczba próbek: ${numSamples.toLocaleString('pl-PL')}.`;
-                    if (sampleRate < 2 * freq && (waveType !== 'noise' && waveType !== 'spikes')) {
-                        statusMessage += ` ⚠️ Niskie próbkowanie!`;
+                    const numSamples = Math.floor(duration * sampleRate);
+                    const increment = 1 / sampleRate;
+                    finalSignalData = new Float32Array(numSamples);
+
+                    for (const component of signalComponents) {
+                        const { amplitude: amp, frequency: freq, spikeDensity, waveType } = component;
+                        if (freq <= 0 && !['noise', 'spikes', 'dc'].includes(waveType)) continue;
+
+                        for (let i = 0; i < numSamples; i++) {
+                            const t = i * increment;
+                            let value = 0;
+                            switch (waveType) {
+                                case 'sine': value = amp * Math.sin(2 * Math.PI * freq * t); break;
+                                case 'square': value = amp * Math.sign(Math.sin(2 * Math.PI * freq * t)); break;
+                                case 'triangle': value = amp * (2 / Math.PI) * Math.asin(Math.sin(2 * Math.PI * freq * t)); break;
+                                case 'sawtooth': value = amp * (2 * (t * freq - Math.floor(0.5 + t * freq))); break;
+                                case 'dc': value = amp; break;
+                                case 'noise': value = amp * (2 * Math.random() - 1); break;
+                                case 'spikes': value = (Math.random() < (spikeDensity / 100)) ? amp * (Math.random() > 0.5 ? 1 : -1) : 0; break;
+                            }
+                            finalSignalData[i] += value;
+                        }
                     }
-                    statusDiv.textContent = statusMessage;
+                    globalStatusDiv.textContent = `${numSamples.toLocaleString('pl-PL')} próbek`;
+                    if (signalComponents.length === 0) {
+                        globalStatusDiv.textContent = 'Dodaj komponent, aby rozpocząć.';
+                    }
                 }
                 
-                updateYAxisRange();
+                resetView();
                 updateUIState();
                 draw();
 
             } catch (error) {
-                statusDiv.textContent = `❌ Błąd: ${error.message}`;
+                globalStatusDiv.textContent = `❌ Błąd: ${error.message}`;
+                finalSignalData = [];
+                draw();
             }
         }
         
-        function updateYAxisRange() {
-            if (generatedData.length === 0) {
-                viewYRange = { min: -1, max: 1 };
-                return;
+        function saveToCSV() {
+            if (finalSignalData.length === 0) return;
+            try {
+                const sampleRate = (parseFloat(sampleRateInput.value) || 0) * (parseFloat(sampleRateUnitInput.value) || 0);
+                const increment = 1 / sampleRate;
+                const header = "CH1;Start;Increment;";
+                const meta = `Volt;${(0).toExponential(6).replace('.', ',')};${increment.toExponential(6).replace('.', ',')}`;
+                let csvContent = `${header}\n${meta}\n`;
+                finalSignalData.forEach(v => { csvContent += `${(v || 0).toExponential(2).replace('.', ',')};\n`; });
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = 'sygnal_zlozony.csv';
+                link.click();
+                URL.revokeObjectURL(link.href);
+            } catch (error) {
+                globalStatusDiv.textContent = `❌ Błąd podczas zapisu.`;
             }
-            let min = generatedData[0];
-            let max = generatedData[0];
-            for(const v of generatedData) {
-                if (v < min) min = v;
-                if (v > max) max = v;
-            }
-            if (min === max) {
-                min -= 1;
-                max += 1;
-            }
-            const padding = Math.abs(max - min) * 0.1;
-            viewYRange.min = min - padding;
-            viewYRange.max = max + padding;
         }
 
-        function saveToCSV() {
-            if (generatedData.length === 0) {
-                statusDiv.textContent = '❌ Brak danych do zapisania.';
+        // --- Logika Widoku i Interakcji ---
+        function resetView() {
+            if (finalSignalData.length === 0) {
+                view.scaleX = 1; view.scaleY = 1; view.offsetX = 0; view.offsetY = 0;
                 return;
             }
-            try {
-                const startTime = 0;
-                const header = "CH1;Start;Increment;";
-                const meta = `Volt;${startTime.toExponential(6).replace('.', ',')};${generatedIncrement.toExponential(6).replace('.', ',')}`;
-
-                let csvContent = `${header}
-${meta}
-`;
-
-                generatedData.forEach(value => {
-                    csvContent += `${value.toExponential(2).replace('.', ',')};
-`;
-                });
-
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                
-                link.href = url;
-
-                const waveType = waveTypeSelect.value;
-                let fileName = 'sygnal.csv';
-                if (waveType === 'noise' || waveType === 'spikes') {
-                    fileName = `${waveType}_${amplitudeInput.value}V.csv`;
-                } else {
-                    fileName = `${waveType}_${frequencyInput.value}Hz.csv`;
-                }
-                link.download = fileName;
-
-                document.body.appendChild(link);
-                link.click();
-                
-                setTimeout(() => {
-                    document.body.removeChild(link);
-                    window.URL.revokeObjectURL(url);
-                }, 100);
-                
-                statusDiv.textContent = `✅ Plik ${fileName} został zapisany.`;
-            } catch (error) {
-                console.error("Błąd podczas zapisywania pliku:", error);
-                statusDiv.textContent = `❌ Wystąpił błąd podczas zapisu.`;
+            const { chartWidth, chartHeight } = getChartDimensions();
+            const sampleRate = (parseFloat(sampleRateInput.value) || 1) * (parseFloat(sampleRateUnitInput.value) || 1);
+            const duration = sampleRate > 0 ? finalSignalData.length / sampleRate : 0;
+            
+            let min = finalSignalData.length > 0 ? finalSignalData[0] : -1;
+            let max = finalSignalData.length > 0 ? finalSignalData[0] : 1;
+            for(const v of finalSignalData) {
+                if (v < min) min = v; if (v > max) max = v;
             }
+            if (min === max) { min -= 1; max += 1; }
+            const yPadding = Math.abs(max - min) * 0.1 || 1;
+
+            view.scaleX = duration > 0 ? chartWidth / duration : chartWidth;
+            view.offsetX = 0;
+            view.scaleY = -chartHeight / (max - min + 2 * yPadding);
+            view.offsetY = -(max + yPadding) * view.scaleY;
+        }
+
+        function constrainView() {
+            if (finalSignalData.length === 0) return;
+
+            const { chartWidth } = getChartDimensions();
+            const sampleRate = (parseFloat(sampleRateInput.value) || 1) * (parseFloat(sampleRateUnitInput.value) || 1);
+            if (sampleRate <= 0) return;
+            const duration = finalSignalData.length / sampleRate;
+            const signalWidth = duration * view.scaleX;
+
+            if (signalWidth < chartWidth) {
+                view.offsetX = (chartWidth - signalWidth) / 2;
+            } else {
+                if (view.offsetX > 0) view.offsetX = 0;
+                if (view.offsetX < chartWidth - signalWidth) {
+                    view.offsetX = chartWidth - signalWidth;
+                }
+            }
+        }
+
+        function handleZoom(e) {
+            e.preventDefault();
+            if (finalSignalData.length === 0) return;
+
+            const z = 1 + (e.deltaY < 0 ? 1 : -1) * 0.1;
+            const mouseX = e.offsetX - padding.left;
+            const mouseY = e.offsetY - padding.top;
+
+            if (e.ctrlKey) {
+                const v = (mouseY - view.offsetY) / view.scaleY;
+                view.scaleY *= z;
+                view.offsetY = mouseY - v * view.scaleY;
+            } else {
+                if (e.deltaY > 0) { // Zooming out
+                    const { chartWidth } = getChartDimensions();
+                    const sampleRate = (parseFloat(sampleRateInput.value) || 1) * (parseFloat(sampleRateUnitInput.value) || 1);
+                    if (sampleRate > 0) {
+                        const duration = finalSignalData.length / sampleRate;
+                        const minScaleX = chartWidth / duration;
+                        if (view.scaleX < minScaleX) {
+                           return; // Block zooming out further
+                        }
+                    }
+                }
+                const t = (mouseX - view.offsetX) / view.scaleX;
+                view.scaleX *= z;
+                view.offsetX = mouseX - t * view.scaleX;
+            }
+            constrainView();
+            draw();
+        }
+
+        function handleMouseDown(e) {
+            if (finalSignalData.length === 0) return;
+            view.panning = true;
+            view.lastMouseX = e.offsetX;
+            view.lastMouseY = e.offsetY;
+        }
+
+        function handleMouseMove(e) {
+            const mouseX_chart = e.offsetX - padding.left;
+            const mouseY_chart = e.offsetY - padding.top;
+            const { chartWidth, chartHeight } = getChartDimensions();
+
+            if (finalSignalData.length > 0 && mouseX_chart >= 0 && mouseX_chart <= chartWidth && mouseY_chart >= 0 && mouseY_chart <= chartHeight) {
+                tooltipPanel.style.display = 'block';
+                tooltipPanel.style.left = `${e.clientX + 15}px`;
+                tooltipPanel.style.top = `${e.clientY + 15}px`;
+                const time = (mouseX_chart - view.offsetX) / view.scaleX;
+                const voltage = (mouseY_chart - view.offsetY) / view.scaleY;
+                tooltipPanel.innerHTML = `${formatValue(time, 's')}<br>${formatValue(voltage, 'V')}`;
+            } else {
+                tooltipPanel.style.display = 'none';
+            }
+
+            if (view.panning) {
+                const dx = e.offsetX - view.lastMouseX;
+                const dy = e.offsetY - view.lastMouseY;
+                view.offsetX += dx;
+                view.offsetY += dy;
+                
+                constrainView();
+
+                view.lastMouseX = e.offsetX;
+                view.lastMouseY = e.offsetY;
+                draw();
+            }
+        }
+
+        function handleMouseUp() {
+            view.panning = false;
+        }
+
+        function formatValue(value, unit) {
+            if (value === null || isNaN(value)) return '---';
+            if (Math.abs(value) >= 1e9) return (value / 1e9).toFixed(2) + ' G' + unit;
+            if (Math.abs(value) >= 1e6) return (value / 1e6).toFixed(2) + ' M' + unit;
+            if (Math.abs(value) >= 1e3) return (value / 1e3).toFixed(2) + ' k' + unit;
+            if (Math.abs(value) >= 1) return value.toFixed(2) + ' ' + unit;
+            if (Math.abs(value) >= 1e-3) return (value * 1e3).toFixed(2) + ' m' + unit;
+            if (Math.abs(value) >= 1e-6) return (value * 1e6).toFixed(2) + ' µ' + unit;
+            if (Math.abs(value) >= 1e-9) return (value * 1e9).toFixed(2) + ' n' + unit;
+            if (value === 0) return '0 ' + unit;
+            return value.toExponential(2) + ' ' + unit;
         }
 
         // --- Logika Rysowania ---
@@ -421,26 +620,22 @@ ${meta}
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.restore();
 
-            if (generatedData.length === 0) {
-                ctx.fillStyle = "#666";
-                ctx.textAlign = "center";
-                ctx.font = "16px Arial";
-                ctx.fillText("Brak sygnału do wyświetlenia.", width / 2, height / 2);
-                return;
-            }
-
             const { chartWidth, chartHeight } = getChartDimensions();
             
             ctx.save();
             ctx.translate(padding.left, padding.top);
-            
             drawGrid(chartWidth, chartHeight);
-
-            ctx.beginPath();
-            ctx.rect(0, 0, chartWidth, chartHeight);
-            ctx.clip();
-            drawWaveform(chartWidth, chartHeight);
-            
+            if (finalSignalData.length > 0) {
+                ctx.beginPath();
+                ctx.rect(0, 0, chartWidth, chartHeight);
+                ctx.clip();
+                drawWaveform(chartWidth, chartHeight);
+            } else {
+                 ctx.fillStyle = "#666";
+                 ctx.textAlign = "center";
+                 ctx.font = "16px Arial";
+                 ctx.fillText("Brak sygnału do wyświetlenia.", chartWidth / 2, chartHeight / 2);
+            }
             ctx.restore();
         }
 
@@ -453,67 +648,52 @@ ${meta}
         }
 
         function drawGrid(width, height) {
-            const duration = generatedData.length * generatedIncrement;
-            const yRange = viewYRange.max - viewYRange.min;
-
             ctx.save();
             ctx.font = "10px Arial";
             ctx.fillStyle = "#888";
 
             // Oś Y (Napięcie)
             ctx.textAlign = "right";
-            const numYLines = 5;
-            for (let i = 0; i <= numYLines; i++) {
-                const v = viewYRange.min + (i / numYLines) * yRange;
-                const y = height - (i / numYLines) * height;
-                
-                const isZeroAxis = Math.abs(v) < 1e-9 || (v > 0 && viewYRange.min > 0) || (v < 0 && viewYRange.max < 0);
-                if (viewYRange.min <= 0 && viewYRange.max >= 0 && Math.abs(v) > 1e-9) {
-                     // Draw normal grid line
-                } else if (viewYRange.min > 0 || viewYRange.max < 0) {
-                    // Don't draw zero axis if it's not in range
+            const voltRange = height / Math.abs(view.scaleY);
+            let voltStep = Math.pow(10, Math.floor(Math.log10(voltRange))) / 5;
+            if (voltStep <= 0 || !isFinite(voltStep)) voltStep = 0.1;
+            const vTop = (0 - view.offsetY) / view.scaleY;
+            let volt = Math.floor(vTop / voltStep) * voltStep;
+            for(let i=0; i<2*height && isFinite(volt) && voltStep > 0; i++) {
+                const y = volt * view.scaleY + view.offsetY;
+                if (y > height + 10) break;
+                if (y >= -10) {
+                    const isZero = Math.abs(volt) < 1e-9;
+                    ctx.strokeStyle = isZero ? '#00aaff' : '#444';
+                    ctx.lineWidth = isZero ? 1 : 0.5;
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+                    if(!isZero) ctx.fillText(volt.toFixed(2), -8, y + 3);
                 }
-
-                ctx.strokeStyle = '#444';
-                ctx.lineWidth = 0.5;
-                ctx.beginPath();
-                ctx.moveTo(0, y);
-                ctx.lineTo(width, y);
-                ctx.stroke();
-                ctx.fillText(v.toFixed(2), -8, y + 3);
+                volt -= voltStep;
             }
-            // Draw zero line separately if in view
-            if (viewYRange.min <= 0 && viewYRange.max >= 0) {
-                const y0 = height * (viewYRange.max / yRange);
-                ctx.strokeStyle = '#00aaff';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(0, y0);
-                ctx.lineTo(width, y0);
-                ctx.stroke();
-            }
-
 
             // Oś X (Czas)
             ctx.textAlign = "center";
-            const numXLines = 10;
-            for (let i = 0; i <= numXLines; i++) {
-                const t = (i / numXLines) * duration;
-                const x = (i / numXLines) * width;
-                const isZeroAxis = i === 0;
-                ctx.strokeStyle = isZeroAxis ? '#00aaff' : '#444';
-                ctx.lineWidth = isZeroAxis ? 1 : 0.5;
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, height);
-                ctx.stroke();
-                 if (!isZeroAxis) {
-                    ctx.fillText((t * 1000).toFixed(1), x, height + 15);
+            const timeRange = width / view.scaleX;
+            let timeStep = Math.pow(10, Math.floor(Math.log10(timeRange))) / 10;
+            if (timeStep <= 0 || !isFinite(timeStep)) timeStep = 1e-3;
+            const firstTime = -view.offsetX / view.scaleX;
+            let time = Math.ceil(firstTime / timeStep) * timeStep;
+            for(let i=0; i<2*width && isFinite(time) && timeStep > 0; i++) {
+                const x = time * view.scaleX + view.offsetX;
+                if (x > width + 10) break;
+                if (x >= -10) {
+                    const isZero = Math.abs(time) < 1e-12;
+                    ctx.strokeStyle = isZero ? '#00aaff' : '#444';
+                    ctx.lineWidth = isZero ? 1 : 0.5;
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+                    if(!isZero) ctx.fillText(formatValue(time, 's').replace(' s',''), x, height + 15);
                 }
+                time += timeStep;
             }
             
             // Tytuły osi
-            ctx.fillText("Czas [ms]", width / 2, height + 30);
+            ctx.fillText("Czas", width / 2, height + 30);
             ctx.save();
             ctx.translate(-45, height / 2);
             ctx.rotate(-Math.PI / 2);
@@ -524,18 +704,27 @@ ${meta}
         }
 
         function drawWaveform(width, height) {
-            const yRange = viewYRange.max - viewYRange.min;
-            if (yRange === 0) return;
+            const sampleRate = (parseFloat(sampleRateInput.value) || 1) * (parseFloat(sampleRateUnitInput.value) || 1);
+            if (sampleRate <= 0) return;
+            const increment = 1 / sampleRate;
+            if (!isFinite(increment) || increment <= 0) return;
 
             ctx.strokeStyle = '#33ff99';
             ctx.lineWidth = 1.5;
             ctx.beginPath();
 
-            for (let i = 0; i < generatedData.length; i++) {
-                const x = (i / (generatedData.length -1)) * width;
-                const y = height - ((generatedData[i] - viewYRange.min) / yRange) * height;
-                if (i === 0) {
+            const startIndex = Math.max(0, Math.floor((-view.offsetX / view.scaleX) / increment));
+            const endIndex = Math.min(finalSignalData.length, Math.ceil(((width - view.offsetX) / view.scaleX) / increment));
+            
+            const step = Math.max(1, Math.floor((endIndex - startIndex) / (width * 2)));
+
+            let firstPoint = true;
+            for (let i = startIndex; i < endIndex; i += step) {
+                const x = i * increment * view.scaleX + view.offsetX;
+                const y = finalSignalData[i] * view.scaleY + view.offsetY;
+                if (firstPoint) {
                     ctx.moveTo(x, y);
+                    firstPoint = false;
                 } else {
                     ctx.lineTo(x, y);
                 }
@@ -547,3 +736,4 @@ ${meta}
     </script>
 </body>
 </html>
+
