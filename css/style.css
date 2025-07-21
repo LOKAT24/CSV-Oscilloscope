@@ -1,0 +1,189 @@
+:root {
+    --bg-color: #1a1a1a;
+    --side-panel-bg: #2a2a2a;
+    --surface-darker-color: #222;
+    --primary-color: #00aaff;
+    --text-color: #e0e0e0;
+    --text-muted-color: #ccc;
+    --border-color: #444;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+h1 {
+    margin: 0 0 15px 0;
+    color: #ffffff;
+    font-size: 1.4em;
+    text-align: center;
+}
+
+.btn, a.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-family: inherit;
+    transition: background-color 0.3s;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+
+.btn:hover, a.btn:hover { background-color: #0056b3; }
+.btn:disabled { background-color: #555; cursor: not-allowed; }
+.btn.danger { background-color: #dc3545; }
+.btn.danger:hover { background-color: #c82333; }
+.btn.full-width { width: 100%; }
+.btn.active { background-color: #0056b3; }
+
+.btn svg, .radio-group svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.control-section {
+    border: 1px solid var(--border-color);
+    padding: 10px 15px;
+    border-radius: 8px;
+    background-color: #333;
+}
+
+.section-title {
+    font-weight: bold;
+    color: var(--primary-color);
+    font-size: 1em;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 10px;
+}
+.control-group:last-child { margin-bottom: 0; }
+.control-group label { font-size: 0.9em; color: var(--text-muted-color); }
+.control-group input, .control-group select {
+    background-color: var(--surface-darker-color);
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 6px;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 0.9em;
+    width: 100%;
+}
+
+.radio-group {
+    display: flex;
+    background-color: #444;
+    border-radius: 5px;
+    overflow: hidden;
+}
+.radio-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    color: #ccc;
+    font-size: 0.9em;
+}
+.radio-group input[type="radio"] { display: none; }
+.radio-group input[type="radio"]:checked + svg + span { color: #fff; }
+.radio-group label:has(input:checked) { background-color: #007bff; }
+
+.slider-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #ccc;
+    font-size: 0.9em;
+}
+
+#density-info {
+    font-family: monospace;
+    font-size: 0.9em;
+    background-color: #222;
+    padding: 2px 6px;
+    border-radius: 3px;
+    min-width: 100px;
+    text-align: center;
+}
+
+#canvas-container {
+    flex-grow: 1;
+    position: relative;
+    min-height: 0;
+}
+
+canvas {
+    display: block;
+    background-color: var(--surface-darker-color);
+    border-radius: 4px;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+}
+canvas:active { cursor: grabbing; }
+
+.panel {
+    position: absolute;
+    background-color: rgba(40, 40, 40, 0.8);
+    border: 1px solid #666;
+    border-radius: 5px;
+    padding: 10px;
+    font-size: 12px;
+    font-family: monospace;
+    color: #eee;
+    pointer-events: none;
+    display: none;
+}
+
+#tooltip-panel {
+    position: fixed;
+    display: none;
+    background-color: rgba(40, 40, 40, 0.8);
+    border: 1px solid #666;
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-family: monospace;
+    color: #eee;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.top-right-nav {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    z-index: 10;
+}
+.top-right-nav .btn {
+    padding: 6px 12px;
+    font-size: 0.85em;
+    background-color: #3a3a3a;
+}
