@@ -203,7 +203,6 @@
             z-index: 100;
         }
         
-        /* ZMIANA: Dodane style dla opcji wyświetlania */
         .radio-group {
             display: flex;
             background-color: #444;
@@ -301,7 +300,6 @@
         </div>
         <div id="chart-toolbar">
              <button id="reset-view-btn" class="btn"><i class="fa-solid fa-arrows-rotate"></i>Resetuj Widok</button>
-             <!-- ZMIANA: Dodane opcje wyświetlania -->
              <div class="radio-group" id="render-mode-controls">
                 <label>
                     <input type="radio" name="renderMode" value="minmax" checked>
@@ -369,6 +367,11 @@
                     </select>
                 </div>
             </div>
+            <!-- ZMIANA: Dodano pole dla fazy -->
+            <div class="control-group phase-control">
+                <label>Faza (°):</label>
+                <input type="number" class="phase" value="0" step="1">
+            </div>
             <div class="control-group spikes-density-control" style="display: none;">
                 <label>Gęstość p. (%):</label>
                 <input type="number" class="spike-density" value="1" step="0.1" min="0">
@@ -392,7 +395,6 @@
         const componentsContainer = document.getElementById('components-container');
         const componentTemplate = document.getElementById('component-template');
         const tooltipPanel = document.getElementById('tooltip-panel');
-        // ZMIANA: Dodane elementy DOM dla opcji wyświetlania
         const optimizationSlider = document.getElementById('optimization-slider');
         const densityInfo = document.getElementById('density-info');
         const sliderControl = document.querySelector('.slider-control');
@@ -403,7 +405,6 @@
         let nextComponentId = 0;
         const padding = { top: 20, right: 20, bottom: 40, left: 60 };
         const view = { scaleX: 1.0, scaleY: 1.0, offsetX: 0, offsetY: 0, panning: false, lastMouseX: 0, lastMouseY: 0 };
-        // ZMIANA: Dodane zmienne dla opcji wyświetlania
         let renderMode = 'minmax';
         let optimizationLevel = 25;
 
@@ -422,7 +423,6 @@
             canvas.addEventListener('mouseup', handleMouseUp);
             canvas.addEventListener('mouseleave', handleMouseUp);
 
-            // ZMIANA: Dodane event listenery dla opcji wyświetlania
             document.querySelectorAll('input[name="renderMode"]').forEach(radio => {
                 radio.addEventListener('change', function() { 
                     renderMode = this.value; 
@@ -434,7 +434,7 @@
                 optimizationLevel = parseInt(e.target.value, 10);
                 draw();
             });
-            sliderControl.style.display = 'none'; // Domyślnie ukryty
+            sliderControl.style.display = 'none';
 
             window.addEventListener('resize', () => { setupCanvas(); resetView(); draw(); });
             updateUIState();
@@ -464,7 +464,8 @@
 
         function addNewComponent() {
             const componentId = nextComponentId++;
-            const newComponent = { id: componentId, waveType: 'sine', amplitude: 1, frequency: 1000, spikeDensity: 1 };
+            // ZMIANA: Dodano 'phase' do obiektu komponentu
+            const newComponent = { id: componentId, waveType: 'sine', amplitude: 1, frequency: 1000, phase: 0, spikeDensity: 1 };
             signalComponents.push(newComponent);
 
             const tile = componentTemplate.content.cloneNode(true).firstElementChild;
@@ -478,6 +479,8 @@
 
                 newComponent.frequency = freqValue * freqMultiplier;
                 newComponent.amplitude = ampValue * ampMultiplier;
+                // ZMIANA: Odczyt wartości fazy
+                newComponent.phase = parseFloat(tile.querySelector('.phase').value) || 0;
                 newComponent.spikeDensity = parseFloat(tile.querySelector('.spike-density').value) || 0;
                 regenerateFinalSignal();
             };
@@ -511,8 +514,13 @@
         function updateComponentControls(tile, waveType) {
             const freqControl = tile.querySelector('.frequency-control');
             const spikeControl = tile.querySelector('.spikes-density-control');
+            // ZMIANA: Dodano kontrolę widoczności pola fazy
+            const phaseControl = tile.querySelector('.phase-control');
+            const hasPhase = ['sine', 'square', 'triangle', 'sawtooth'].includes(waveType);
+            
             freqControl.style.display = ['noise', 'spikes', 'dc'].includes(waveType) ? 'none' : 'flex';
             spikeControl.style.display = waveType === 'spikes' ? 'flex' : 'none';
+            phaseControl.style.display = hasPhase ? 'flex' : 'none';
         }
 
         function regenerateFinalSignal() {
@@ -530,17 +538,22 @@
                     finalSignalData = new Float32Array(numSamples);
 
                     for (const component of signalComponents) {
-                        const { amplitude: amp, frequency: freq, spikeDensity, waveType } = component;
+                        // ZMIANA: Pobranie fazy z komponentu
+                        const { amplitude: amp, frequency: freq, phase, spikeDensity, waveType } = component;
                         if (freq <= 0 && !['noise', 'spikes', 'dc'].includes(waveType)) continue;
+
+                        // ZMIANA: Konwersja fazy na radiany
+                        const phaseRad = phase * Math.PI / 180;
 
                         for (let i = 0; i < numSamples; i++) {
                             const t = i * increment;
                             let value = 0;
+                            // ZMIANA: Zastosowanie fazy w formułach
                             switch (waveType) {
-                                case 'sine': value = amp * Math.sin(2 * Math.PI * freq * t); break;
-                                case 'square': value = amp * Math.sign(Math.sin(2 * Math.PI * freq * t)); break;
-                                case 'triangle': value = amp * (2 / Math.PI) * Math.asin(Math.sin(2 * Math.PI * freq * t)); break;
-                                case 'sawtooth': value = amp * (2 * (t * freq - Math.floor(0.5 + t * freq))); break;
+                                case 'sine': value = amp * Math.sin(2 * Math.PI * freq * t + phaseRad); break;
+                                case 'square': value = amp * Math.sign(Math.sin(2 * Math.PI * freq * t + phaseRad)); break;
+                                case 'triangle': value = amp * (2 / Math.PI) * Math.asin(Math.sin(2 * Math.PI * freq * t + phaseRad)); break;
+                                case 'sawtooth': value = amp * (2 * ((t * freq + (phase / 360)) - Math.floor(0.5 + (t * freq + (phase / 360))))); break;
                                 case 'dc': value = amp; break;
                                 case 'noise': value = amp * (2 * Math.random() - 1); break;
                                 case 'spikes': value = (Math.random() < (spikeDensity / 100)) ? amp * (Math.random() > 0.5 ? 1 : -1) : 0; break;
@@ -866,7 +879,6 @@
             ctx.restore();
         }
 
-        // ZMIANA: Zaktualizowana funkcja rysowania fali z trybami
         function drawWaveform(width, height) {
             const sampleRate = (parseFloat(sampleRateInput.value) || 1) * (parseFloat(sampleRateUnitInput.value) || 1);
             if (sampleRate <= 0) return;
