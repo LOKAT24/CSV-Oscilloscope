@@ -286,7 +286,8 @@
             <h2 class="section-title">Akcje</h2>
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <button id="reset-btn" class="btn danger full-width" disabled><i class="fa-solid fa-trash-arrow-up"></i>Resetuj Kompozycję</button>
-                <button id="save-btn" class="btn full-width" disabled><i class="fa-solid fa-file-csv"></i>Zapisz do CSV</button>
+                <button id="save-csv-btn" class="btn full-width" disabled><i class="fa-solid fa-file-csv"></i>Zapisz do CSV</button>
+                <button id="save-raf-btn" class="btn full-width" disabled><i class="fa-solid fa-wave-square"></i>Zapisz do RAF (Rigol)</button>
             </div>
         </div>
 
@@ -367,7 +368,6 @@
                     </select>
                 </div>
             </div>
-            <!-- ZMIANA: Dodano pole dla fazy -->
             <div class="control-group phase-control">
                 <label>Faza (°):</label>
                 <input type="number" class="phase" value="0" step="1">
@@ -387,7 +387,8 @@
         const durationUnitInput = document.getElementById('duration-unit');
         const addComponentBtn = document.getElementById('add-component-btn');
         const resetBtn = document.getElementById('reset-btn');
-        const saveBtn = document.getElementById('save-btn');
+        const saveCsvBtn = document.getElementById('save-csv-btn');
+        const saveRafBtn = document.getElementById('save-raf-btn');
         const resetViewBtn = document.getElementById('reset-view-btn');
         const globalStatusDiv = document.getElementById('global-status');
         const canvas = document.getElementById('plot-canvas');
@@ -413,7 +414,8 @@
             setupCanvas();
             addComponentBtn.addEventListener('click', addNewComponent);
             resetBtn.addEventListener('click', resetGenerator);
-            saveBtn.addEventListener('click', saveToCSV);
+            saveCsvBtn.addEventListener('click', saveToCSV);
+            saveRafBtn.addEventListener('click', saveToRAF);
             resetViewBtn.addEventListener('click', () => { resetView(); draw(); });
             [sampleRateInput, sampleRateUnitInput, durationInput, durationUnitInput].forEach(el => el.addEventListener('input', regenerateFinalSignal));
             
@@ -451,7 +453,8 @@
 
         function updateUIState() {
             const hasComponents = signalComponents.length > 0;
-            saveBtn.disabled = !hasComponents;
+            saveCsvBtn.disabled = !hasComponents;
+            saveRafBtn.disabled = !hasComponents;
             resetBtn.disabled = !hasComponents;
             resetViewBtn.disabled = finalSignalData.length === 0;
         }
@@ -464,7 +467,6 @@
 
         function addNewComponent() {
             const componentId = nextComponentId++;
-            // ZMIANA: Dodano 'phase' do obiektu komponentu
             const newComponent = { id: componentId, waveType: 'sine', amplitude: 1, frequency: 1000, phase: 0, spikeDensity: 1 };
             signalComponents.push(newComponent);
 
@@ -479,7 +481,6 @@
 
                 newComponent.frequency = freqValue * freqMultiplier;
                 newComponent.amplitude = ampValue * ampMultiplier;
-                // ZMIANA: Odczyt wartości fazy
                 newComponent.phase = parseFloat(tile.querySelector('.phase').value) || 0;
                 newComponent.spikeDensity = parseFloat(tile.querySelector('.spike-density').value) || 0;
                 regenerateFinalSignal();
@@ -514,7 +515,6 @@
         function updateComponentControls(tile, waveType) {
             const freqControl = tile.querySelector('.frequency-control');
             const spikeControl = tile.querySelector('.spikes-density-control');
-            // ZMIANA: Dodano kontrolę widoczności pola fazy
             const phaseControl = tile.querySelector('.phase-control');
             const hasPhase = ['sine', 'square', 'triangle', 'sawtooth'].includes(waveType);
             
@@ -538,17 +538,14 @@
                     finalSignalData = new Float32Array(numSamples);
 
                     for (const component of signalComponents) {
-                        // ZMIANA: Pobranie fazy z komponentu
                         const { amplitude: amp, frequency: freq, phase, spikeDensity, waveType } = component;
                         if (freq <= 0 && !['noise', 'spikes', 'dc'].includes(waveType)) continue;
 
-                        // ZMIANA: Konwersja fazy na radiany
                         const phaseRad = phase * Math.PI / 180;
 
                         for (let i = 0; i < numSamples; i++) {
                             const t = i * increment;
                             let value = 0;
-                            // ZMIANA: Zastosowanie fazy w formułach
                             switch (waveType) {
                                 case 'sine': value = amp * Math.sin(2 * Math.PI * freq * t + phaseRad); break;
                                 case 'square': value = amp * Math.sign(Math.sin(2 * Math.PI * freq * t + phaseRad)); break;
@@ -597,7 +594,55 @@
                 link.click();
                 URL.revokeObjectURL(link.href);
             } catch (error) {
-                globalStatusDiv.textContent = `❌ Błąd podczas zapisu.`;
+                globalStatusDiv.textContent = `❌ Błąd podczas zapisu CSV.`;
+            }
+        }
+
+        function saveToRAF() {
+            if (finalSignalData.length === 0) return;
+            try {
+                // --- START OF CORRECTION ---
+
+                // 1. Find the absolute maximum amplitude to create a symmetrical range around 0.
+                let absMax = 0;
+                for(const v of finalSignalData) {
+                    if (Math.abs(v) > absMax) {
+                        absMax = Math.abs(v);
+                    }
+                }
+                
+                // If the signal is flat zero, prevent division by zero.
+                if (absMax === 0) {
+                    absMax = 1; // Create a nominal +/- 1V range
+                }
+
+                // 2. The data for the generator is 14-bit (0 to 16383).
+                // The values are stored as 16-bit unsigned integers (Uint16).
+                const scaledData = new Uint16Array(finalSignalData.length);
+                const rigolMax = 16383; // 0x3FFF
+
+                for (let i = 0; i < finalSignalData.length; i++) {
+                    // 3. Normalize the signal value from [-absMax, +absMax] to [0, 1].
+                    // A value of +absMax should become 1.
+                    // A value of -absMax should become 0.
+                    // A value of 0 should become 0.5.
+                    const normalized = (finalSignalData[i] + absMax) / (2 * absMax);
+                    
+                    // 4. Scale the normalized value to the 0-16383 range and round it.
+                    // This ensures that 0V maps to ~8192, +absMax to 16383, and -absMax to 0.
+                    scaledData[i] = Math.round(normalized * rigolMax);
+                }
+                
+                // --- END OF CORRECTION ---
+
+                const blob = new Blob([scaledData], { type: 'application/octet-stream' });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = 'sygnal_rigol.raf';
+                link.click();
+                URL.revokeObjectURL(link.href);
+            } catch (error) {
+                globalStatusDiv.textContent = `❌ Błąd podczas zapisu RAF: ${error.message}`;
             }
         }
 
