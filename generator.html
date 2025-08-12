@@ -151,7 +151,7 @@
             text-align: center;
             padding-top: 10px;
         }
-        .top-right-nav { position: absolute; top: 15px; right: 15px; z-index: 10; }
+        .top-right-nav { position: absolute; top: 15px; right: 15px; z-index: 10; display: flex; gap: 10px; }
         .top-right-nav .btn { padding: 6px 12px; font-size: 0.85em; background-color: #3a3a3a; }
 
         #components-container {
@@ -298,6 +298,7 @@
     <div id="main-content">
         <div class="top-right-nav">
             <a href="index.html" class="btn">Przejdź do Oscyloskopu</a>
+            <a href="https://github.com/LOKAT24/CSV-Oscilloscope/issues/new" target="_blank" class="btn" title="Zgłoś błąd">🐛 Zgłoś błąd</a>
         </div>
         <div id="chart-toolbar">
              <button id="reset-view-btn" class="btn"><i class="fa-solid fa-arrows-rotate"></i>Resetuj Widok</button>
